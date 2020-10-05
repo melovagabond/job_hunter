@@ -5,11 +5,6 @@ import Jobs from './Jobs';
 
 const JOB_API_URL = 'http://localhost:3001/jobs'
 
-const mockJobs = [
-  {title: 'SWE 1', company: 'Google'},
-  {title: 'SWE 2', company: 'Facebook'},
-  {title: 'SWE 3', company: 'Apple'}
-]
 
 async function fetchJobs(updateCb){
   const res = await fetch(JOB_API_URL);
