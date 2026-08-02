@@ -1,14 +1,33 @@
-# Example file
+# Self-hosted deployment: one image, two processes, one shared ledger.
+# The api serves the dashboard on :3001; the worker fetches on the cron
+# schedule. Both read .env for keys and share ./data for the SQLite db.
+#
+#   docker compose up -d --build
+#   docker compose logs -f worker
+#
+# The API is published on 127.0.0.1 only. There is no auth on it yet;
+# do not publish it to 0.0.0.0 or reverse-proxy it to the internet
+# until that changes.
 
-version: '3'
 services:
-  web:
+  api:
     build: .
-    ports:
-      - "3001:3001"
-    depends_on:
-      - redis
+    command: node api/index.js
+    env_file: .env
     environment:
-      - NODE_ENV=production
-  redis:
-    image: "redis:latest"
+      - JOB_DB_PATH=/app/data/jobs.sqlite
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: node worker/index.js
+    env_file: .env
+    environment:
+      - JOB_DB_PATH=/app/data/jobs.sqlite
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
