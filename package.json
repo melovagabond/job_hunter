@@ -1,29 +1,24 @@
 {
   "name": "job_hunter",
   "version": "1.0.0",
-  "description": "Application to assist with the Job Hunt",
+  "description": "",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "directories": {
+    "test": "test"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Oniketsu/job_hunter.git"
+  "scripts": {
+    "worker": "node worker/index.js",
+    "fetch:once": "node worker/pipeline.js",
+    "test": "node --test test/core.test.js test/api.test.js",
+    "api": "node api/index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/Oniketsu/job_hunter/issues"
-  },
-  "homepage": "https://github.com/Oniketsu/job_hunter#readme",
   "dependencies": {
-    "@babel/runtime": "^7.11.2",
-    "@material-ui/core": "^4.11.0",
-    "cron": "^1.8.2",
-    "express": "^4.18.2",
-    "material-ui": "^0.20.2",
-    "node-fetch": "^2.6.7",
-    "redis": "^3.1.1"
+    "better-sqlite3": "^12.11.1",
+    "cron": "^4.4.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
   }
 }

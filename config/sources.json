@@ -1,0 +1,39 @@
+{
+  "adzuna": {
+    "enabled": true,
+    "country": "us",
+    "what": "devsecops OR \"cloud security\" OR \"security architect\"",
+    "where": "Philadelphia, PA",
+    "distance_km": 80,
+    "max_pages": 5,
+    "results_per_page": 50
+  },
+  "usajobs": {
+    "enabled": true,
+    "keyword": "DevSecOps Cloud Security",
+    "location_name": "Philadelphia, Pennsylvania",
+    "radius_miles": 50,
+    "include_remote": true,
+    "max_pages": 3
+  },
+  "remotive": {
+    "enabled": true,
+    "search": "devsecops"
+  },
+  "remoteok": {
+    "enabled": true,
+    "tags": ["devsecops", "security", "infosec", "cloud"]
+  },
+  "greenhouse": {
+    "enabled": true,
+    "boards": []
+  },
+  "lever": {
+    "enabled": true,
+    "companies": []
+  },
+  "dice": {
+    "enabled": false,
+    "comment": "No stable public API. Reach it through the Dice MCP connector interactively, or add a scraper module here as the documented fallback."
+  }
+}

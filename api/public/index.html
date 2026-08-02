@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>job_hunter</title>
+<style>
+  :root {
+    --bg: #1a1f26;
+    --panel: #232a33;
+    --panel-2: #2a323d;
+    --line: #313b47;
+    --text: #dde3ea;
+    --dim: #8b98a8;
+    --amber: #e3a340;
+    --matched: #4fb8a8;
+    --queued: #e3a340;
+    --applied: #5c9bd6;
+    --needs_followup: #a78bdb;
+    --followed_up: #7fbf7f;
+    --skipped: #6b7684;
+    --rejected: #c96a6a;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 15px; line-height: 1.45;
+  }
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    padding: 18px 24px 0;
+  }
+  h1 { font-family: var(--mono); font-size: 18px; margin: 0; letter-spacing: .02em; }
+  h1 .cursor { color: var(--amber); }
+
+  /* Governor readout: an instrument, not a widget */
+  .governor { font-family: var(--mono); font-size: 13px; color: var(--dim); text-align: right; }
+  .governor .nums { color: var(--text); }
+  .meter {
+    width: 220px; height: 4px; background: var(--line);
+    border-radius: 2px; margin-top: 6px; overflow: hidden;
+  }
+  .meter > div { height: 100%; background: var(--amber); width: 0%; transition: width .3s; }
+  .governor.blocked .nums { color: var(--rejected); }
+  .governor.blocked .meter > div { background: var(--rejected); }
+
+  /* Signature: the state machine as navigation */
+  nav.pipeline {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+    padding: 16px 24px; font-family: var(--mono); font-size: 13px;
+  }
+  nav.pipeline .arrow { color: var(--line); user-select: none; padding: 0 2px; }
+  nav.pipeline .branch { color: var(--line); margin-left: 12px; user-select: none; }
+  nav.pipeline button {
+    background: none; border: 1px solid var(--line); border-radius: 3px;
+    color: var(--dim); font: inherit; padding: 5px 10px; cursor: pointer;
+  }
+  nav.pipeline button:hover { color: var(--text); }
+  nav.pipeline button:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+  nav.pipeline button.active { color: var(--text); border-color: var(--s, var(--dim)); }
+  nav.pipeline button .count { color: var(--s, var(--dim)); }
+
+  main { padding: 0 24px 48px; }
+  .empty { color: var(--dim); font-family: var(--mono); font-size: 13px; padding: 32px 4px; }
+
+  .job {
+    background: var(--panel); border: 1px solid var(--line);
+    border-left: 3px solid var(--s, var(--line));
+    border-radius: 4px; margin-bottom: 10px; padding: 12px 16px;
+  }
+  .job .row { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .job h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .job h2 a { color: var(--text); text-decoration: none; }
+  .job h2 a:hover { text-decoration: underline; }
+  .job .co { color: var(--dim); }
+  .job .facts {
+    font-family: var(--mono); font-size: 12.5px; color: var(--dim);
+    display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px;
+  }
+  .job .facts .money { color: var(--followed_up); }
+  .job .facts .remote { color: var(--applied); }
+  .actions { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+  .actions button {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px;
+    color: var(--text); font-family: var(--mono); font-size: 12.5px;
+    padding: 5px 10px; cursor: pointer;
+  }
+  .actions button:hover { border-color: var(--dim); }
+  .actions button:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+  .actions button.primary { border-color: var(--amber); color: var(--amber); }
+  .actions button.danger:hover { border-color: var(--rejected); color: var(--rejected); }
+
+  .detail { display: none; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .job.open .detail { display: block; }
+  .detail .reasons { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-bottom: 8px; }
+  .detail .desc {
+    max-height: 260px; overflow-y: auto; font-size: 13.5px; color: var(--dim);
+    background: var(--bg); border-radius: 3px; padding: 10px 12px;
+  }
+  .detail .hist { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 8px; }
+
+  #toast {
+    position: fixed; bottom: 20px; right: 20px; max-width: 420px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-left: 3px solid var(--amber);
+    padding: 10px 14px; border-radius: 4px; font-family: var(--mono);
+    font-size: 12.5px; display: none;
+  }
+  #toast.error { border-left-color: var(--rejected); }
+  @media (prefers-reduced-motion: reduce) { .meter > div { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>job_hunter<span class="cursor">_</span></h1>
+  <div class="governor" id="governor">loading</div>
+</header>
+<nav class="pipeline" id="pipeline" aria-label="Pipeline stages"></nav>
+<main id="list"><div class="empty">loading</div></main>
+<div id="toast" role="status"></div>
+
+<script>
+const STATUSES = ['matched','queued','applied','needs_followup','followed_up','skipped','rejected'];
+const FLOW = ['matched','queued','applied','needs_followup','followed_up'];
+const SIDE = ['skipped','rejected'];
+
+// What you can do to a job depends on where it sits in the machine.
+// 'applied' goes through the governor endpoint; everything else is a
+// plain transition.
+const ACTIONS = {
+  matched:        [['Queue','queued','primary'], ['Skip','skipped'], ['Reject','rejected','danger']],
+  queued:         [['Record application','applied','primary'], ['Skip','skipped']],
+  applied:        [['Needs follow-up','needs_followup','primary'], ['Reject','rejected','danger']],
+  needs_followup: [['Followed up','followed_up','primary'], ['Reject','rejected','danger']],
+  followed_up:    [['Reject','rejected','danger']],
+  skipped:        [['Rescue to matched','matched','primary']],
+  rejected:       []
+};
+
+let current = 'matched';
+
+const fmt = {
+  salary: j => {
+    if (j.salary_max) return '$' + Math.round(j.salary_max/1000) + 'k';
+    if (j.salary_min) return '$' + Math.round(j.salary_min/1000) + 'k+';
+    return null;
+  },
+  date: s => s ? String(s).slice(0, 10) : null
+};
+
+function toast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = isError ? 'error' : '';
+  t.style.display = 'block';
+  clearTimeout(t._h);
+  t._h = setTimeout(() => { t.style.display = 'none'; }, 4000);
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.error || res.statusText), { body, status: res.status });
+  return body;
+}
+
+async function loadStats() {
+  const s = await api('/api/stats');
+  const g = s.governor;
+  const el = document.getElementById('governor');
+  el.classList.toggle('blocked', !g.allowed);
+  let line;
+  if (g.allowed) {
+    line = 'applied this week <span class="nums">' + g.applied_this_week + ' / ' + g.cap + '</span>';
+  } else if (g.reason === 'weekly_cap_reached') {
+    line = '<span class="nums">cap reached: ' + g.applied_this_week + ' / ' + g.cap + '</span>';
+  } else {
+    line = '<span class="nums">paused: sort ' + g.backlog + ' applied job' + (g.backlog === 1 ? '' : 's') + ' to resume</span>';
+  }
+  el.innerHTML = line + '<div class="meter"><div style="width:' +
+    Math.min(100, (g.applied_this_week / g.cap) * 100) + '%"></div></div>';
+
+  const counts = s.by_status;
+  const nav = document.getElementById('pipeline');
+  nav.innerHTML = '';
+  const mkBtn = (st) => {
+    const b = document.createElement('button');
+    b.style.setProperty('--s', 'var(--' + st + ')');
+    b.className = st === current ? 'active' : '';
+    b.innerHTML = st.replace('_', ' ') + ' <span class="count">' + (counts[st] || 0) + '</span>';
+    b.onclick = () => { current = st; refresh(); };
+    return b;
+  };
+  FLOW.forEach((st, i) => {
+    if (i) nav.insertAdjacentHTML('beforeend', '<span class="arrow">-&gt;</span>');
+    nav.appendChild(mkBtn(st));
+  });
+  nav.insertAdjacentHTML('beforeend', '<span class="branch">|</span>');
+  SIDE.forEach(st => nav.appendChild(mkBtn(st)));
+}
+
+async function act(id, to) {
+  try {
+    if (to === 'applied') {
+      const variant = prompt('Resume variant used (optional):') || null;
+      await api('/api/jobs/' + id + '/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resume_variant: variant })
+      });
+      toast('Application recorded');
+    } else {
+      await api('/api/jobs/' + id + '/transition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to })
+      });
+      toast('Moved to ' + to.replace('_', ' '));
+    }
+  } catch (err) {
+    if (err.status === 429 && err.body.governor) {
+      const g = err.body.governor;
+      toast(g.reason === 'weekly_cap_reached'
+        ? 'Governor: weekly cap of ' + g.cap + ' reached'
+        : 'Governor: sort your ' + g.backlog + ' applied jobs before the next batch', true);
+    } else {
+      toast(err.message, true);
+    }
+  }
+  refresh();
+}
+
+async function toggleDetail(el, id) {
+  el.classList.toggle('open');
+  if (!el.classList.contains('open') || el.dataset.loaded) return;
+  const j = await api('/api/jobs/' + id);
+  el.dataset.loaded = '1';
+  const d = el.querySelector('.detail');
+  const reasons = j.match_reasons ? JSON.parse(j.match_reasons).join('  ') : '';
+  const hist = (j.history || []).map(h =>
+    h.changed_at + '  ' + (h.from_status || 'start') + ' -> ' + h.to_status
+  ).join('<br>');
+  d.innerHTML =
+    (reasons ? '<div class="reasons">' + reasons + '</div>' : '') +
+    '<div class="desc">' + (j.description || 'No description captured.') + '</div>' +
+    (hist ? '<div class="hist">' + hist + '</div>' : '');
+}
+
+async function loadJobs() {
+  const jobs = await api('/api/jobs?status=' + current);
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  if (jobs.length === 0) {
+    list.innerHTML = '<div class="empty">Nothing in ' + current.replace('_', ' ') +
+      '. ' + (current === 'matched' ? 'Run the worker or wait for the next fetch.' : '') + '</div>';
+    return;
+  }
+  for (const j of jobs) {
+    const el = document.createElement('article');
+    el.className = 'job';
+    el.style.setProperty('--s', 'var(--' + current + ')');
+    const facts = [
+      j.source,
+      j.is_remote ? '<span class="remote">remote</span>' : (j.location || 'location unknown'),
+      fmt.salary(j) ? '<span class="money">' + fmt.salary(j) + '</span>' : null,
+      j.match_score != null ? 'score ' + j.match_score : null,
+      fmt.date(j.posted_at)
+    ].filter(Boolean).join('<span aria-hidden="true"> &middot; </span>');
+
+    el.innerHTML =
+      '<div class="row"><div>' +
+      '<h2>' + (j.url ? '<a href="' + j.url + '" target="_blank" rel="noopener">' : '') +
+      j.title + (j.url ? '</a>' : '') +
+      ' <span class="co">' + (j.company || '') + '</span></h2>' +
+      '<div class="facts">' + facts + '</div>' +
+      '</div><div class="actions"></div></div><div class="detail"></div>';
+
+    const actions = el.querySelector('.actions');
+    for (const [label, to, cls] of ACTIONS[current] || []) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      if (cls) b.className = cls;
+      b.onclick = (e) => { e.stopPropagation(); act(j.id, to); };
+      actions.appendChild(b);
+    }
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('button, a')) return;
+      toggleDetail(el, j.id);
+    });
+    list.appendChild(el);
+  }
+}
+
+async function refresh() {
+  await Promise.all([loadStats(), loadJobs()]);
+}
+refresh();
+setInterval(loadStats, 60000);
+</script>
+</body>
+</html>

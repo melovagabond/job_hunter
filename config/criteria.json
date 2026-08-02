@@ -1,0 +1,47 @@
+{
+  "titles": {
+    "must_match_any": [
+      "devsecops",
+      "cloud security",
+      "security architect",
+      "cloud architect",
+      "application security",
+      "platform security",
+      "security engineer",
+      "infrastructure security"
+    ],
+    "exclude": [
+      "intern",
+      "internship",
+      "junior",
+      "jr.",
+      "help desk",
+      "helpdesk",
+      "desktop support",
+      "deskside",
+      "sales",
+      "recruiter",
+      "physical security",
+      "security guard",
+      "security officer"
+    ]
+  },
+  "salary": {
+    "floor_usd": 140000,
+    "accept_missing_salary": true
+  },
+  "location": {
+    "home": { "lat": 39.9526, "lon": -75.1652, "label": "Philadelphia, PA" },
+    "radius_miles": 50,
+    "accept_remote": true,
+    "accept_unknown_location": false,
+    "metro_keywords": [
+      "philadelphia", "philly", "king of prussia", "conshohocken",
+      "cherry hill", "camden", "wilmington", "trenton", "malvern",
+      "radnor", "wayne, pa", "plymouth meeting", "fort washington",
+      "mount laurel", "marlton", "newark, de", "princeton", "horsham",
+      "blue bell", "media, pa", "west chester, pa", "exton", "chesterbrook"
+    ]
+  },
+  "weekly_apply_cap": 100
+}
