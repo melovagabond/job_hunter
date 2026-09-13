@@ -1,0 +1,16 @@
+[
+  {
+    "source": "linkedin",
+    "sourceId": "optional-site-id",
+    "title": "Senior Cloud Security Engineer",
+    "company": "Example Company",
+    "location": "Remote - US",
+    "remote": true,
+    "salaryMin": 150000,
+    "salaryMax": 185000,
+    "currency": "USD",
+    "url": "https://www.linkedin.com/jobs/view/example",
+    "description": "Paste the job description here.",
+    "postedAt": "2026-09-13"
+  }
+]

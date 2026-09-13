@@ -10,6 +10,19 @@
       "security engineer",
       "infrastructure security"
     ],
+    "resume_assisted": [
+      "devops",
+      "site reliability",
+      "platform engineer",
+      "cloud engineer",
+      "solutions architect",
+      "cybersecurity",
+      "information security",
+      "identity and access",
+      "incident response",
+      "security operations",
+      "governance risk and compliance"
+    ],
     "exclude": [
       "intern",
       "internship",

@@ -64,6 +64,27 @@
   nav.pipeline button .count { color: var(--s, var(--dim)); }
 
   main { padding: 0 24px 48px; }
+  .tools {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    padding: 0 24px 16px;
+  }
+  .tools form, .tools details { margin: 0; }
+  .tools input, .tools select, .tools textarea, .tools button, .tools summary {
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    border-radius: 3px; padding: 7px 10px; font: 12.5px var(--mono);
+  }
+  .tools button, .tools summary { cursor: pointer; }
+  .tools input[type="search"] { width: min(380px, 70vw); }
+  .indexes { display: flex; gap: 8px; }
+  .indexes a { color: var(--amber); font: 12.5px var(--mono); }
+  .import-panel {
+    position: absolute; z-index: 2; right: 24px; margin-top: 8px;
+    width: min(520px, calc(100vw - 48px)); padding: 12px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
+  }
+  .import-panel label { display: block; color: var(--dim); font: 12px var(--mono); margin: 7px 0 3px; }
+  .import-panel input, .import-panel select, .import-panel textarea { width: 100%; }
+  .import-panel textarea { min-height: 110px; resize: vertical; }
   .empty { color: var(--dim); font-family: var(--mono); font-size: 13px; padding: 32px 4px; }
 
   .job {
@@ -119,6 +140,36 @@
   <div class="governor" id="governor">loading</div>
 </header>
 <nav class="pipeline" id="pipeline" aria-label="Pipeline stages"></nav>
+<section class="tools" aria-label="Job search and import tools">
+  <form id="search-form">
+    <input id="search-query" type="search" placeholder="Search the local job index" required>
+    <button type="submit">Search</button>
+  </form>
+  <div class="indexes" id="indexes"></div>
+  <details id="import-details">
+    <summary>Add job</summary>
+    <form class="import-panel" id="import-form">
+      <label for="import-source">Source</label>
+      <select id="import-source" name="source">
+        <option value="linkedin">LinkedIn</option>
+        <option value="indeed">Indeed</option>
+        <option value="dice">Dice</option>
+        <option value="manual">Other</option>
+      </select>
+      <label for="import-title">Title</label>
+      <input id="import-title" name="title" required>
+      <label for="import-company">Company</label>
+      <input id="import-company" name="company">
+      <label for="import-location">Location</label>
+      <input id="import-location" name="location">
+      <label for="import-url">Job URL</label>
+      <input id="import-url" name="url" type="url">
+      <label for="import-description">Description</label>
+      <textarea id="import-description" name="description"></textarea>
+      <button type="submit">Index job</button>
+    </form>
+  </details>
+</section>
 <main id="list"><div class="empty">loading</div></main>
 <div id="toast" role="status"></div>
 
@@ -141,6 +192,7 @@ const ACTIONS = {
 };
 
 let current = 'matched';
+let searchQuery = '';
 
 const fmt = {
   salary: j => {
@@ -150,6 +202,26 @@ const fmt = {
   },
   date: s => s ? String(s).slice(0, 10) : null
 };
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  })[ch]);
+}
+
+function plainText(value) {
+  const doc = new DOMParser().parseFromString(String(value ?? ''), 'text/html');
+  return doc.body.textContent || '';
+}
+
+function safeUrl(value) {
+  try {
+    const url = new URL(String(value));
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
 
 function toast(msg, isError) {
   const t = document.getElementById('toast');
@@ -202,6 +274,21 @@ async function loadStats() {
   SIDE.forEach(st => nav.appendChild(mkBtn(st)));
 }
 
+async function loadIndexes() {
+  const indexes = await api('/api/indexes');
+  const el = document.getElementById('indexes');
+  el.replaceChildren();
+  for (const index of indexes) {
+    const a = document.createElement('a');
+    a.textContent = index.name;
+    a.href = safeUrl(index.url) || '#';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.title = 'Search ' + index.name + ', then use Add job to index a result';
+    el.appendChild(a);
+  }
+}
+
 async function act(id, to) {
   try {
     if (to === 'applied') {
@@ -239,47 +326,58 @@ async function toggleDetail(el, id) {
   const j = await api('/api/jobs/' + id);
   el.dataset.loaded = '1';
   const d = el.querySelector('.detail');
-  const reasons = j.match_reasons ? JSON.parse(j.match_reasons).join('  ') : '';
+  const reasons = j.match_reasons
+    ? JSON.parse(j.match_reasons).map(escapeHtml).join('  ')
+    : '';
   const hist = (j.history || []).map(h =>
-    h.changed_at + '  ' + (h.from_status || 'start') + ' -> ' + h.to_status
+    escapeHtml(h.changed_at) + '  ' + escapeHtml(h.from_status || 'start') +
+      ' -&gt; ' + escapeHtml(h.to_status)
   ).join('<br>');
   d.innerHTML =
     (reasons ? '<div class="reasons">' + reasons + '</div>' : '') +
-    '<div class="desc">' + (j.description || 'No description captured.') + '</div>' +
+    '<div class="desc">' + escapeHtml(
+      plainText(j.description || 'No description captured.')
+    ) + '</div>' +
     (hist ? '<div class="hist">' + hist + '</div>' : '');
 }
 
 async function loadJobs() {
-  const jobs = await api('/api/jobs?status=' + current);
+  const jobs = current === 'search'
+    ? await api('/api/search?q=' + encodeURIComponent(searchQuery))
+    : await api('/api/jobs?status=' + current);
   const list = document.getElementById('list');
   list.innerHTML = '';
   if (jobs.length === 0) {
-    list.innerHTML = '<div class="empty">Nothing in ' + current.replace('_', ' ') +
+    list.innerHTML = '<div class="empty">Nothing in ' + escapeHtml(current.replace('_', ' ')) +
       '. ' + (current === 'matched' ? 'Run the worker or wait for the next fetch.' : '') + '</div>';
     return;
   }
   for (const j of jobs) {
+    const jobStatus = j.status || current;
     const el = document.createElement('article');
     el.className = 'job';
-    el.style.setProperty('--s', 'var(--' + current + ')');
+    el.style.setProperty('--s', 'var(--' + jobStatus + ')');
+    const jobUrl = safeUrl(j.url);
     const facts = [
-      j.source,
-      j.is_remote ? '<span class="remote">remote</span>' : (j.location || 'location unknown'),
+      escapeHtml(j.source),
+      j.is_remote
+        ? '<span class="remote">remote</span>'
+        : escapeHtml(j.location || 'location unknown'),
       fmt.salary(j) ? '<span class="money">' + fmt.salary(j) + '</span>' : null,
-      j.match_score != null ? 'score ' + j.match_score : null,
-      fmt.date(j.posted_at)
+      j.match_score != null ? 'score ' + escapeHtml(j.match_score) : null,
+      fmt.date(j.posted_at) ? escapeHtml(fmt.date(j.posted_at)) : null
     ].filter(Boolean).join('<span aria-hidden="true"> &middot; </span>');
 
     el.innerHTML =
       '<div class="row"><div>' +
-      '<h2>' + (j.url ? '<a href="' + j.url + '" target="_blank" rel="noopener">' : '') +
-      j.title + (j.url ? '</a>' : '') +
-      ' <span class="co">' + (j.company || '') + '</span></h2>' +
+      '<h2>' + (jobUrl ? '<a href="' + escapeHtml(jobUrl) + '" target="_blank" rel="noopener">' : '') +
+      escapeHtml(j.title) + (jobUrl ? '</a>' : '') +
+      ' <span class="co">' + escapeHtml(j.company || '') + '</span></h2>' +
       '<div class="facts">' + facts + '</div>' +
       '</div><div class="actions"></div></div><div class="detail"></div>';
 
     const actions = el.querySelector('.actions');
-    for (const [label, to, cls] of ACTIONS[current] || []) {
+    for (const [label, to, cls] of ACTIONS[jobStatus] || []) {
       const b = document.createElement('button');
       b.textContent = label;
       if (cls) b.className = cls;
@@ -294,10 +392,39 @@ async function loadJobs() {
   }
 }
 
+document.getElementById('search-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  searchQuery = document.getElementById('search-query').value.trim();
+  if (!searchQuery) return;
+  current = 'search';
+  refresh();
+});
+
+document.getElementById('import-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form));
+  try {
+    const result = await api('/api/jobs/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    toast(result.inserted ? 'Job indexed as ' + result.job.status : 'Job already indexed');
+    if (result.inserted) current = result.job.status;
+    form.reset();
+    document.getElementById('import-details').open = false;
+    refresh();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
 async function refresh() {
   await Promise.all([loadStats(), loadJobs()]);
 }
 refresh();
+loadIndexes();
 setInterval(loadStats, 60000);
 </script>
 </body>

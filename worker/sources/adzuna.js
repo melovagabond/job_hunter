@@ -4,12 +4,13 @@
 // Note: Adzuna's distance param is kilometers, not miles.
 
 const { normalize } = require('../lib/normalize');
+const { isConfigured } = require('../lib/env');
 
 async function fetchAdzuna(cfg, criteria) {
   const id = process.env.ADZUNA_APP_ID;
   const key = process.env.ADZUNA_APP_KEY;
-  if (!id || !key) {
-    console.warn('[adzuna] missing ADZUNA_APP_ID/ADZUNA_APP_KEY, skipping');
+  if (!isConfigured(id) || !isConfigured(key)) {
+    console.warn('[adzuna] credentials missing or still placeholders, skipping');
     return [];
   }
 

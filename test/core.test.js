@@ -11,6 +11,9 @@ const db = require('../worker/db/db');
 const { normalize, dedupeKey } = require('../worker/lib/normalize');
 const { evaluate } = require('../worker/lib/match');
 const { haversineMiles } = require('../worker/lib/geo');
+const { isConfigured } = require('../worker/lib/env');
+const { extractProfile, scoreAgainstProfile } = require('../worker/lib/profile');
+const { annualSalary } = require('../worker/sources/jobicy');
 
 const criteria = JSON.parse(fs.readFileSync(
   path.join(__dirname, '..', 'config', 'criteria.json'), 'utf8'
@@ -149,4 +152,53 @@ test('weekly application counter counts only this ISO week', () => {
 test('isoWeekKey handles year boundary', () => {
   // Jan 1 2027 is a Friday, ISO week 53 of 2026.
   assert.strictEqual(db.isoWeekKey(new Date(Date.UTC(2027, 0, 1))), '2026-W53');
+});
+
+test('placeholder credentials are treated as unconfigured', () => {
+  assert.strictEqual(isConfigured('your_key_here'), false);
+  assert.strictEqual(isConfigured('you@example.com'), false);
+  assert.strictEqual(isConfigured('real-key-value'), true);
+});
+
+test('resume profile extraction and scoring are explainable', () => {
+  const profile = extractProfile('AWS Azure Kubernetes Terraform DevSecOps');
+  const result = scoreAgainstProfile(makeJob({
+    title: 'Cloud Security Architect',
+    description: 'Build secure platforms on AWS with Kubernetes and Terraform.'
+  }), profile);
+  assert.ok(result.score >= 3);
+  assert.ok(result.reasons.includes('resume_skill:aws'));
+  assert.ok(result.reasons.includes('resume_skill:kubernetes'));
+});
+
+test('full-text index searches job title and description', () => {
+  db.upsertJob(makeJob({
+    sourceId: 'fts1', company: 'Searchable Co',
+    description: 'Kubernetes platform security and Terraform automation'
+  }));
+  const results = db.searchJobs('kubernetes terraform');
+  assert.ok(results.some(job => job.company === 'Searchable Co'));
+});
+
+test('broad resume-assisted titles require multiple skill signals', () => {
+  const profile = extractProfile('AWS Kubernetes Terraform DevOps');
+  const weak = evaluate(makeJob({
+    title: 'Payments Solutions Architect',
+    description: 'Compliance reporting for payment processing.'
+  }), criteria, profile);
+  assert.strictEqual(weak.matched, false);
+  assert.ok(weak.reasons.some(reason => reason.startsWith('resume_evidence_too_weak:')));
+
+  const strong = evaluate(makeJob({
+    title: 'Cloud Platform Engineer',
+    description: 'Build AWS Kubernetes platforms using Terraform.'
+  }), criteria, profile);
+  assert.strictEqual(strong.matched, true);
+});
+
+test('Jobicy salaries are annualized without turning missing values into zero', () => {
+  assert.strictEqual(annualSalary(80, 'hourly'), 166400);
+  assert.strictEqual(annualSalary(12000, 'monthly'), 144000);
+  assert.strictEqual(annualSalary(null, 'yearly'), undefined);
+  assert.strictEqual(annualSalary('', 'yearly'), undefined);
 });

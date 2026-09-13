@@ -26,7 +26,7 @@ function seedJob(name, status = 'matched') {
 
 let server, base;
 test.before(async () => {
-  const app = buildApp();
+  const app = buildApp({ weeklyCap: () => CAP });
   await new Promise(res => { server = app.listen(0, res); });
   base = `http://localhost:${server.address().port}`;
 });
@@ -121,14 +121,21 @@ test('POST /apply records an application and reports governor state', async () =
 });
 
 test('POST /apply returns 429 when the governor says no', async () => {
-  // Fill the current week to the cap used by the real config? No:
-  // the API reads criteria.json (cap 100). Instead verify the 429 path
-  // by direct governor check with a tiny cap, and the endpoint contract
-  // via a queued job with cap forced through many applications is
-  // impractical here. The wiring (gov.allowed -> 429) is one line and
-  // the governor itself is covered above.
-  const g = governor.status(0);
-  assert.strictEqual(g.allowed, false);
+  let i = 0;
+  while (db.appliedThisWeek() < CAP) {
+    const id = seedJob('fill-cap-' + i++, 'queued');
+    const filled = await req('POST', `/api/jobs/${id}/apply`);
+    assert.strictEqual(filled.status, 200);
+  }
+
+  const blockedId = seedJob('blocked-at-cap', 'queued');
+  const blocked = await req('POST', `/api/jobs/${blockedId}/apply`);
+  assert.strictEqual(blocked.status, 429);
+  assert.strictEqual(blocked.body.error, 'governor_blocked');
+  assert.strictEqual(blocked.body.governor.reason, 'weekly_cap_reached');
+
+  const job = db.connect().prepare('SELECT status FROM jobs WHERE id = ?').get(blockedId);
+  assert.strictEqual(job.status, 'queued');
 });
 
 test('GET /api/jobs/:id includes status history', async () => {
@@ -137,4 +144,28 @@ test('GET /api/jobs/:id includes status history', async () => {
   assert.strictEqual(status, 200);
   assert.ok(Array.isArray(body.history));
   assert.strictEqual(body.history[0].from_status, 'new');
+});
+
+test('external indexes return safe search links', async () => {
+  const { status, body } = await req('GET', '/api/indexes');
+  assert.strictEqual(status, 200);
+  assert.deepStrictEqual(body.map(index => index.name), ['LinkedIn', 'Indeed', 'Dice']);
+  assert.ok(body.every(index => index.url.startsWith('https://')));
+});
+
+test('manual import normalizes, matches, and becomes searchable', async () => {
+  const imported = await req('POST', '/api/jobs/import', {
+    source: 'linkedin',
+    title: 'Cloud Security Architect',
+    company: 'Imported Co',
+    location: 'Remote - US',
+    url: 'https://www.linkedin.com/jobs/view/123',
+    description: 'AWS Kubernetes Terraform security architecture'
+  });
+  assert.strictEqual(imported.status, 201);
+  assert.strictEqual(imported.body.job.status, 'matched');
+
+  const searched = await req('GET', '/api/search?q=kubernetes+terraform');
+  assert.strictEqual(searched.status, 200);
+  assert.ok(searched.body.some(job => job.company === 'Imported Co'));
 });

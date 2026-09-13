@@ -3,6 +3,7 @@
 // Docs: developer.usajobs.gov
 
 const { normalize } = require('../lib/normalize');
+const { isConfigured } = require('../lib/env');
 
 function parseRemuneration(item) {
   const rem = item.PositionRemuneration && item.PositionRemuneration[0];
@@ -21,8 +22,8 @@ function parseRemuneration(item) {
 async function fetchUsaJobs(cfg) {
   const key = process.env.USAJOBS_API_KEY;
   const email = process.env.USAJOBS_EMAIL;
-  if (!key || !email) {
-    console.warn('[usajobs] missing USAJOBS_API_KEY/USAJOBS_EMAIL, skipping');
+  if (!isConfigured(key) || !isConfigured(email)) {
+    console.warn('[usajobs] credentials missing or still placeholders, skipping');
     return [];
   }
 

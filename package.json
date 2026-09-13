@@ -9,6 +9,8 @@
   "scripts": {
     "worker": "node worker/index.js",
     "fetch:once": "node worker/pipeline.js",
+    "profile": "node worker/profile.js",
+    "reindex": "node worker/reindex.js",
     "test": "node --test test/core.test.js test/api.test.js",
     "api": "node api/index.js"
   },

@@ -13,25 +13,30 @@ function parseSalaryText(s) {
 }
 
 async function fetchRemotive(cfg) {
-  const url = `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(cfg.search)}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    console.warn(`[remotive] HTTP ${res.status}, skipping`);
-    return [];
+  const searches = cfg.searches || [cfg.search];
+  const jobs = new Map();
+  for (const search of searches.filter(Boolean)) {
+    const url = `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(search)}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn(`[remotive:${search}] HTTP ${res.status}, skipping`);
+      continue;
+    }
+    const data = await res.json();
+    for (const j of data.jobs || []) jobs.set(String(j.id), j);
   }
-  const data = await res.json();
-  return (data.jobs || []).map(j => normalize({
-    source: 'remotive',
-    sourceId: j.id,
-    title: j.title,
-    company: j.company_name,
-    location: j.candidate_required_location || 'Remote',
-    remote: true,
-    ...parseSalaryText(j.salary),
-    url: j.url,
-    description: j.description,
-    postedAt: j.publication_date
-  })).filter(Boolean);
+  return [...jobs.values()].map(j => normalize({
+      source: 'remotive',
+      sourceId: j.id,
+      title: j.title,
+      company: j.company_name,
+      location: j.candidate_required_location || 'Remote',
+      remote: true,
+      ...parseSalaryText(j.salary),
+      url: j.url,
+      description: j.description,
+      postedAt: j.publication_date
+    })).filter(Boolean);
 }
 
 module.exports = { fetch: fetchRemotive };

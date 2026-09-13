@@ -18,7 +18,7 @@
   },
   "remotive": {
     "enabled": true,
-    "search": "devsecops"
+    "searches": ["devsecops", "cloud security", "security architect", "cybersecurity"]
   },
   "remoteok": {
     "enabled": true,
@@ -32,8 +32,19 @@
     "enabled": true,
     "companies": []
   },
+  "jobicy": {
+    "enabled": true,
+    "count": 100,
+    "geo": "usa",
+    "industry": "engineering",
+    "tags": ["devsecops", "cloud security", "security architect", "cybersecurity"]
+  },
+  "imports": {
+    "enabled": true,
+    "files": ["data/import/jobs.json"]
+  },
   "dice": {
     "enabled": false,
-    "comment": "No stable public API. Reach it through the Dice MCP connector interactively, or add a scraper module here as the documented fallback."
+    "comment": "No approved general search API. Use the dashboard Dice search link and Add job, or place exported records in data/import/jobs.json."
   }
 }

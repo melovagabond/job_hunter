@@ -10,9 +10,12 @@
 
 ## What it does today
 
-- **Six live sources**: Adzuna, USAJobs, Remotive, RemoteOK, plus
+- **Seven live sources**: Adzuna, USAJobs, Remotive, RemoteOK, Jobicy, plus
   per-company Greenhouse and Lever boards. Each adapter normalizes to
   one common shape.
+- **Local job index**: SQLite FTS5 searches titles, companies, locations,
+  and descriptions. A private local resume adds explainable skill-based
+  ranking without sending the document to another service.
 - **Config-driven matching**: title allowlist and exclusions, salary
   floor (compared against the max of a posted range), and a geo rule of
   within 50 miles of Philadelphia OR remote. Every accept and reject
@@ -46,8 +49,10 @@ will fail loudly at install).
 
     npm install
     cp .env.example .env      # then fill it in, see comments in the file
-    npm test                  # 23 tests, no network needed
+    npm test                  # 30 tests, no network needed
     npm run fetch:once        # single pipeline run
+    npm run profile           # extract the private local resume profile
+    npm run reindex           # re-score and index all existing jobs
     npm run api               # dashboard at http://localhost:3001
     npm run worker            # cron mode: 7am, 1pm, 7pm Eastern
 
@@ -62,6 +67,18 @@ The other half of configuration lives in `config/`:
 | ---------------------- | ------------------------------------------------- |
 | `config/criteria.json` | titles, salary floor, geo rule, weekly cap        |
 | `config/sources.json`  | which sources run; your Greenhouse/Lever targets  |
+
+Put a plain-text or Markdown resume at `data/docs/resume.cv` (or set
+`RESUME_PATH`). The generated candidate profile and the resume are ignored
+by Git. Jobs exported or saved from sites without a search API can be added
+in the dashboard or imported from `data/import/jobs.json`; use
+`config/import.example.json` as the shape.
+
+LinkedIn, Indeed, and Dice appear as outbound search indexes in the
+dashboard. They are intentionally not scraped: their public developer
+offerings do not provide a general job-seeker search feed, and automated
+extraction is restricted by their terms. Search there, then use **Add job**
+to place a relevant posting in the same local index and matcher.
 
 `sources.json` has empty `boards[]` (Greenhouse) and `companies[]`
 (Lever) arrays. Those are your target-company lists: add the token from

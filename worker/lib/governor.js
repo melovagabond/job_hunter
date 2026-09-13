@@ -22,38 +22,7 @@ function backlogCount() {
 }
 
 function status(cap) {
-  const applied = db.appliedThisWeek();
-  const backlog = backlogCount();
-
-  if (applied >= cap) {
-    return {
-      allowed: false,
-      reason: 'weekly_cap_reached',
-      applied_this_week: applied,
-      cap,
-      backlog
-    };
-  }
-
-  // Fresh week (nothing applied yet) with unsorted carryover: blocked.
-  if (applied === 0 && backlog > 0) {
-    return {
-      allowed: false,
-      reason: 'unsorted_backlog',
-      applied_this_week: applied,
-      cap,
-      backlog
-    };
-  }
-
-  return {
-    allowed: true,
-    reason: null,
-    applied_this_week: applied,
-    cap,
-    remaining: cap - applied,
-    backlog
-  };
+  return db.governorStatus(cap);
 }
 
 module.exports = { status, backlogCount };

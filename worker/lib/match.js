@@ -6,8 +6,9 @@
 // simple additive signal for ranking the review queue, not a gate.
 
 const { classifyLocation } = require('./geo');
+const { scoreAgainstProfile } = require('./profile');
 
-function evaluate(job, criteria) {
+function evaluate(job, criteria, profile = null) {
   const reasons = [];
   let score = 0;
   const title = (job.title || '').toLowerCase();
@@ -20,9 +21,24 @@ function evaluate(job, criteria) {
   }
 
   // 2. Title allowlist.
-  const hits = criteria.titles.must_match_any.filter(x => title.includes(x));
+  const primaryHits = criteria.titles.must_match_any.filter(x => title.includes(x));
+  const assistedHits = (criteria.titles.resume_assisted || []).filter(x => title.includes(x));
+  const hits = [...primaryHits, ...assistedHits];
   if (hits.length === 0) {
     return { matched: false, score: 0, reasons: ['title_no_match'] };
+  }
+  const profileMatch = scoreAgainstProfile(job, profile);
+  const profileSkillHits = profileMatch.reasons.length;
+  if (primaryHits.length === 0 && assistedHits.length > 0 && profileSkillHits < 2) {
+    return {
+      matched: false,
+      score: profileMatch.score,
+      reasons: [
+        ...assistedHits.map(h => `title_hit:${h}`),
+        ...profileMatch.reasons,
+        `resume_evidence_too_weak:${profileSkillHits}`
+      ]
+    };
   }
   score += hits.length;
   reasons.push(...hits.map(h => `title_hit:${h}`));
@@ -67,6 +83,9 @@ function evaluate(job, criteria) {
     default:
       return { matched: false, score, reasons: [...reasons, 'geo:out_of_area'] };
   }
+
+  score += profileMatch.score;
+  reasons.push(...profileMatch.reasons);
 
   return { matched: true, score, reasons };
 }

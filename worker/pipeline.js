@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db/db');
 const { evaluate } = require('./lib/match');
+const { loadProfile } = require('./lib/profile');
 
 const SOURCES = {
   adzuna: require('./sources/adzuna'),
@@ -13,7 +14,9 @@ const SOURCES = {
   remotive: require('./sources/remotive'),
   remoteok: require('./sources/remoteok'),
   greenhouse: require('./sources/greenhouse'),
-  lever: require('./sources/lever')
+  lever: require('./sources/lever'),
+  jobicy: require('./sources/jobicy'),
+  imports: require('./sources/imports')
 };
 
 function loadConfig(name) {
@@ -24,6 +27,7 @@ function loadConfig(name) {
 async function runPipeline() {
   const criteria = loadConfig('criteria.json');
   const sourcesCfg = loadConfig('sources.json');
+  const profile = loadProfile();
 
   const stats = {
     fetched: 0, new: 0, duplicates: 0, matched: 0, skipped: 0, errors: []
@@ -49,7 +53,7 @@ async function runPipeline() {
       if (!inserted) { stats.duplicates++; continue; }
       stats.new++;
 
-      const verdict = evaluate(job, criteria);
+      const verdict = evaluate(job, criteria, profile);
       db.setMatchResult(id, verdict.score, verdict.reasons);
       if (verdict.matched) {
         db.transition(id, 'matched', verdict.reasons.join(','));
