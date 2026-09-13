@@ -8,10 +8,40 @@
 const { classifyLocation } = require('./geo');
 const { scoreAgainstProfile } = require('./profile');
 
+function analyzeEligibility(job, criteria) {
+  const cfg = criteria.eligibility || {};
+  const text = `${job.title || ''} ${job.description || ''}`.toLowerCase();
+  const employment = String(job.employment_type || '').toLowerCase();
+  const warnings = [];
+  const blockers = [];
+  if (/security clearance|secret clearance|top secret|ts\/sci/.test(text)) {
+    warnings.push('clearance_mentioned');
+    if (cfg.allow_clearance_required === false) blockers.push('clearance_required');
+  }
+  if (/u\.s\. citizen|us citizen|united states citizen/.test(text)) {
+    warnings.push('citizenship_mentioned');
+  }
+  if (/no (visa )?sponsorship|unable to sponsor|not sponsor/.test(text)) {
+    warnings.push('no_sponsorship');
+    if (cfg.require_sponsorship === true) blockers.push('sponsorship_unavailable');
+  }
+  if (/contract|temporary|freelance/.test(employment) && cfg.allow_contract === false) {
+    blockers.push('contract_not_accepted');
+  }
+  if (!employment && cfg.accept_unknown_employment_type === false) {
+    blockers.push('employment_type_unknown');
+  }
+  return { blockers, warnings };
+}
+
 function evaluate(job, criteria, profile = null) {
   const reasons = [];
   let score = 0;
   const title = (job.title || '').toLowerCase();
+  const eligibility = analyzeEligibility(job, criteria);
+  if (eligibility.blockers.length) {
+    return { matched: false, score: 0, reasons: eligibility.blockers, breakdown: { eligibility: 0 } };
+  }
 
   // 1. Exclusions veto everything, including titles that also hit the
   // allowlist. "Junior Cloud Security Analyst" dies here on purpose.
@@ -86,8 +116,24 @@ function evaluate(job, criteria, profile = null) {
 
   score += profileMatch.score;
   reasons.push(...profileMatch.reasons);
+  reasons.push(...eligibility.warnings.map(warning => `warning:${warning}`));
 
-  return { matched: true, score, reasons };
+  const confidence = [job.description, job.location, job.posted_at]
+    .filter(Boolean).length + (job.salary_min != null || job.salary_max != null ? 1 : 0);
+  return {
+    matched: true,
+    score,
+    reasons,
+    missingSkills: profileMatch.missingSkills,
+    breakdown: {
+      role: hits.length,
+      skills: profileMatch.score,
+      matched_skills: profileMatch.matchedSkills.length,
+      job_skills_not_in_resume: profileMatch.missingSkills.length,
+      eligibility: reasons.filter(reason => reason.startsWith('salary_') || reason.startsWith('geo:')).length,
+      confidence
+    }
+  };
 }
 
-module.exports = { evaluate };
+module.exports = { evaluate, analyzeEligibility };

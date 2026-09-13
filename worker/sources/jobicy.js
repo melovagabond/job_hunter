@@ -2,6 +2,8 @@
 // It needs no key and allows up to 200 remote jobs per request.
 
 const { normalize } = require('../lib/normalize');
+const { fetchWithPolicy } = require('../lib/http');
+const { searchTerms } = require('../lib/profile');
 
 function annualSalary(value, period) {
   if (value == null || value === '') return undefined;
@@ -11,8 +13,10 @@ function annualSalary(value, period) {
   return amount * (multipliers[String(period || 'yearly').toLowerCase()] || 1);
 }
 
-async function fetchJobicy(cfg) {
-  const tags = cfg.tags && cfg.tags.length ? cfg.tags : [null];
+async function fetchJobicy(cfg, criteria, profile) {
+  const tags = cfg.resume_queries
+    ? searchTerms(profile, criteria, cfg.max_queries || 6)
+    : cfg.tags && cfg.tags.length ? cfg.tags : [null];
   const seen = new Set();
   const jobs = [];
 
@@ -23,7 +27,7 @@ async function fetchJobicy(cfg) {
     });
     if (cfg.industry) params.set('industry', cfg.industry);
     if (tag) params.set('tag', tag);
-    const res = await fetch(`https://jobicy.com/api/v2/remote-jobs?${params}`);
+    const res = await fetchWithPolicy(`https://jobicy.com/api/v2/remote-jobs?${params}`);
     if (!res.ok) {
       console.warn(`[jobicy:${tag || 'all'}] HTTP ${res.status}, skipping`);
       continue;
@@ -44,7 +48,10 @@ async function fetchJobicy(cfg) {
         currency: j.salaryCurrency,
         url: j.url,
         description: j.jobDescription || j.jobExcerpt,
-        postedAt: j.pubDate
+        postedAt: j.pubDate,
+        employmentType: Array.isArray(j.jobType) ? j.jobType.join(', ') : j.jobType,
+        workplaceType: 'remote',
+        seniority: j.jobLevel
       }));
     }
   }

@@ -6,3 +6,5 @@ data/*.sqlite-shm
 data/*.sqlite-wal
 data/docs/
 data/import/
+data/digest.json
+data/backups/

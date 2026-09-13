@@ -5,12 +5,13 @@
 // e.g. "datadog" from boards.greenhouse.io/datadog. No key required.
 
 const { normalize } = require('../lib/normalize');
+const { fetchWithPolicy } = require('../lib/http');
 
 async function fetchGreenhouse(cfg) {
   const jobs = [];
   for (const board of cfg.boards) {
     const url = `https://boards-api.greenhouse.io/v1/boards/${board}/jobs?content=true`;
-    const res = await fetch(url);
+    const res = await fetchWithPolicy(url);
     if (!res.ok) {
       console.warn(`[greenhouse:${board}] HTTP ${res.status}, skipping board`);
       continue;

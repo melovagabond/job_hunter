@@ -21,6 +21,7 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    stop_grace_period: 15s
 
   worker:
     build: .
@@ -31,3 +32,6 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      disable: true

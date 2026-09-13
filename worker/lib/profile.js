@@ -73,12 +73,32 @@ function extractProfile(text, sourcePath = null) {
     if (count) skills.push({ name, count });
   }
   skills.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const years = [...text.matchAll(/\b(\d{1,2})\+?\s+years?\b/gi)]
+    .map(match => Number(match[1])).filter(value => value <= 50);
   return {
     source_path: sourcePath,
     generated_at: new Date().toISOString(),
     skills,
-    keywords: skills.map(skill => skill.name)
+    keywords: skills.map(skill => skill.name),
+    max_claimed_years: years.length ? Math.max(...years) : null
   };
+}
+
+function skillsInText(text) {
+  const found = [];
+  for (const [name, aliases] of Object.entries(SKILL_ALIASES)) {
+    if (countOccurrences(String(text || ''), aliases) > 0) found.push(name);
+  }
+  return found;
+}
+
+function searchTerms(profile, criteria, limit = 8) {
+  const primary = (criteria?.titles?.must_match_any || []).slice(0, 5);
+  const usefulSkills = (profile?.keywords || []).filter(skill =>
+    ['aws', 'azure', 'gcp', 'kubernetes', 'terraform', 'iam', 'devops', 'devsecops'].includes(skill)
+  );
+  const assisted = usefulSkills.slice(0, 3).map(skill => `${skill} security`);
+  return [...new Set([...primary, ...assisted])].slice(0, limit);
 }
 
 function loadProfile(resumePath = process.env.RESUME_PATH || DEFAULT_RESUME) {
@@ -87,10 +107,11 @@ function loadProfile(resumePath = process.env.RESUME_PATH || DEFAULT_RESUME) {
 }
 
 function scoreAgainstProfile(job, profile) {
-  if (!profile) return { score: 0, reasons: [] };
+  if (!profile) return { score: 0, reasons: [], matchedSkills: [], missingSkills: [] };
   const title = String(job.title || '');
   const body = `${job.description || ''} ${job.company || ''}`;
   const reasons = [];
+  const matchedSkills = [];
   let score = 0;
 
   for (const skill of profile.skills) {
@@ -99,9 +120,13 @@ function scoreAgainstProfile(job, profile) {
     const inBody = countOccurrences(body, aliases) > 0;
     if (!inTitle && !inBody) continue;
     score += inTitle ? 3 : 1;
+    matchedSkills.push(skill.name);
     reasons.push(`resume_skill:${skill.name}${inTitle ? ':title' : ''}`);
   }
-  return { score: Math.min(score, 30), reasons };
+  const resumeSkills = new Set(profile.skills.map(skill => skill.name));
+  const jobSkills = skillsInText(`${title} ${body}`);
+  const missingSkills = jobSkills.filter(skill => !resumeSkills.has(skill));
+  return { score: Math.min(score, 30), reasons, matchedSkills, missingSkills };
 }
 
 function writeProfile(outputPath, resumePath) {
@@ -114,5 +139,5 @@ function writeProfile(outputPath, resumePath) {
 
 module.exports = {
   DEFAULT_RESUME, SKILL_ALIASES, extractProfile, loadProfile,
-  scoreAgainstProfile, writeProfile
+  skillsInText, searchTerms, scoreAgainstProfile, writeProfile
 };

@@ -11,6 +11,7 @@
     "fetch:once": "node worker/pipeline.js",
     "profile": "node worker/profile.js",
     "reindex": "node worker/reindex.js",
+    "backup": "node worker/backup.js",
     "test": "node --test test/core.test.js test/api.test.js",
     "api": "node api/index.js"
   },

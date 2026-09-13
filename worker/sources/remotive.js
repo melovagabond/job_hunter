@@ -1,6 +1,8 @@
 // Remotive public API. Everything here is remote by definition. No key.
 
 const { normalize } = require('../lib/normalize');
+const { fetchWithPolicy } = require('../lib/http');
+const { searchTerms } = require('../lib/profile');
 
 function parseSalaryText(s) {
   // Remotive salary is free text like "$140,000 - $180,000". Best effort.
@@ -12,12 +14,14 @@ function parseSalaryText(s) {
   return { salaryMin: Math.min(...nums), salaryMax: Math.max(...nums) };
 }
 
-async function fetchRemotive(cfg) {
-  const searches = cfg.searches || [cfg.search];
+async function fetchRemotive(cfg, criteria, profile) {
+  const searches = cfg.resume_queries
+    ? searchTerms(profile, criteria, cfg.max_queries || 6)
+    : cfg.searches || [cfg.search];
   const jobs = new Map();
   for (const search of searches.filter(Boolean)) {
     const url = `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(search)}`;
-    const res = await fetch(url);
+    const res = await fetchWithPolicy(url);
     if (!res.ok) {
       console.warn(`[remotive:${search}] HTTP ${res.status}, skipping`);
       continue;

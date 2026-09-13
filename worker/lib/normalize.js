@@ -9,15 +9,15 @@ function cleanText(s) {
   return (s || '').toString().replace(/\s+/g, ' ').trim();
 }
 
-// company + normalized title. Same role syndicated across two boards
-// collapses to one row and burns one application slot, not two.
-function dedupeKey(company, title) {
+// Company + title + location. Source IDs are tracked separately, while the
+// location keeps distinct requisitions from being collapsed into one role.
+function dedupeKey(company, title, location) {
   const norm = (s) => cleanText(s).toLowerCase()
     .replace(/[^a-z0-9 ]/g, '')
     .replace(/\b(inc|llc|ltd|corp|corporation|co)\b/g, '')
     .trim();
   return crypto.createHash('sha1')
-    .update(`${norm(company)}|${norm(title)}`)
+    .update(`${norm(company)}|${norm(title)}|${norm(location)}`)
     .digest('hex');
 }
 
@@ -30,7 +30,8 @@ function looksRemote(locationText, explicitFlag) {
 // raw fields a source adapter supplies; everything else is derived here.
 function normalize({
   source, sourceId, title, company, location, remote,
-  salaryMin, salaryMax, currency, url, description, postedAt, lat, lon
+  salaryMin, salaryMax, currency, url, description, postedAt, expiresAt,
+  employmentType, workplaceType, seniority, lat, lon
 }) {
   const t = cleanText(title);
   if (!t) return null;
@@ -48,9 +49,13 @@ function normalize({
     url: cleanText(url) || null,
     description: (description || '').toString().slice(0, 20000) || null,
     posted_at: postedAt || null,
+    expires_at: expiresAt || null,
+    employment_type: cleanText(employmentType) || null,
+    workplace_type: cleanText(workplaceType) || null,
+    seniority: cleanText(seniority) || null,
     lat: Number.isFinite(lat) ? lat : null,
     lon: Number.isFinite(lon) ? lon : null,
-    dedupe_key: dedupeKey(company, t)
+    dedupe_key: dedupeKey(company, t, location)
   };
 }
 

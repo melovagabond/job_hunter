@@ -1,137 +1,278 @@
-<h1 align="center">A slightly less annoying way to hunt for a job</h1>
-<p align="center">
-  <a href='https://ko-fi.com/melovagabond' target='_blank'><img height='35' style='border:0px;height:46px;' src='https://az743702.vo.msecnd.net/cdn/kofi3.png?v=0' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
-</p>
+<h1 align="center">job_hunter</h1>
 
-> Self-hosted job hunting pipeline. Pulls from job APIs (scraping only
-> as a last resort), filters against your criteria, dedupes syndicated
-> postings, and tracks every application through an enforced lifecycle.
-> One place instead of five recruiters and six apps.
+> Private, self-hosted job discovery and application ledger. It gathers
+> postings from approved APIs and public ATS boards, scores them against a
+> local resume and explicit constraints, deduplicates syndicated listings,
+> and tracks applications through an enforced lifecycle.
 
-## What it does today
+## Current capabilities
 
-- **Seven live sources**: Adzuna, USAJobs, Remotive, RemoteOK, Jobicy, plus
-  per-company Greenhouse and Lever boards. Each adapter normalizes to
-  one common shape.
-- **Local job index**: SQLite FTS5 searches titles, companies, locations,
-  and descriptions. A private local resume adds explainable skill-based
-  ranking without sending the document to another service.
-- **Config-driven matching**: title allowlist and exclusions, salary
-  floor (compared against the max of a posted range), and a geo rule of
-  within 50 miles of Philadelphia OR remote. Every accept and reject
-  stores its reasons.
-- **Dedupe**: a hash of normalized company+title, so the same role
-  syndicated across boards occupies one row and one application slot.
-- **SQLite ledger with an enforced state machine**: illegal transitions
-  throw, every change lands in an audit table.
-- **Weekly governor**: hard cap of 100 applications per ISO week, and a
-  new week does not start until the previous batch of applied jobs has
-  been manually sorted into follow-up states.
-- **Dashboard**: zero-dependency web UI where the nav is the state
-  machine itself. Review matches, queue, record applications, work the
-  follow-up backlog.
+- Ten source adapters: Adzuna, USAJobs, Remotive, RemoteOK, Jobicy,
+  Greenhouse, Lever, Ashby, SmartRecruiters, and Workable.
+- Outbound searches plus manual/batch import for LinkedIn, Indeed, and Dice.
+- SQLite FTS5 search over titles, companies, locations, and descriptions.
+- Private local resume profile with explainable skill overlap, missing-skill,
+  role, eligibility, and data-confidence signals.
+- Posting provenance, refreshes, first/last-seen timestamps, stale detection,
+  salary normalization, and source-run yield/error metrics.
+- Structured review feedback, a 72-hour digest, and filters for source, age,
+  score, recency, and salary.
+- An enforced application state machine and weekly application governor.
 
-Planned next: the apply engine (programmatic submission for Greenhouse
-and Lever postings through the same governed endpoint), resume variant
-storage, and contact-info config.
+## Requirements
 
-## Architecture
+- Node.js 20 or newer. Node 22 is used by the Docker image.
+- npm.
+- Optional: Docker Engine plus the Docker Compose v2 plugin (`docker compose`).
+- A plain-text or Markdown resume.
 
-    worker (cron, 3x daily)                    api (:3001)
-      sources/*  -> normalize -> dedupe          dashboard (/)
-                 -> match     -> SQLite  <----   JSON endpoints (/api/*)
-                                  data/jobs.sqlite
+## Local setup checklist
 
-## Quick start (local)
+### 1. Install and create private configuration
 
-Requires Node 20+ (better-sqlite3 compiles a native module; old Node
-will fail loudly at install).
+```sh
+npm ci
+cp .env.example .env
+```
 
-    npm install
-    cp .env.example .env      # then fill it in, see comments in the file
-    npm test                  # 30 tests, no network needed
-    npm run fetch:once        # single pipeline run
-    npm run profile           # extract the private local resume profile
-    npm run reindex           # re-score and index all existing jobs
-    npm run api               # dashboard at http://localhost:3001
-    npm run worker            # cron mode: 7am, 1pm, 7pm Eastern
+`.env` and all files under `data/docs/`, `data/import/`, and `data/backups/`
+are ignored by Git. Never put real credentials in `.env.example`.
 
-Without API keys, Adzuna and USAJobs skip themselves and you only get
-the remote-only sources. That means zero Philadelphia-area results, so
-get the keys; both are free and the .env.example comments say exactly
-where.
+### 2. Add the resume
 
-The other half of configuration lives in `config/`:
+Place the canonical plain-text or Markdown resume here:
 
-| File                   | Controls                                          |
-| ---------------------- | ------------------------------------------------- |
-| `config/criteria.json` | titles, salary floor, geo rule, weekly cap        |
-| `config/sources.json`  | which sources run; your Greenhouse/Lever targets  |
+```text
+data/docs/resume.cv
+```
 
-Put a plain-text or Markdown resume at `data/docs/resume.cv` (or set
-`RESUME_PATH`). The generated candidate profile and the resume are ignored
-by Git. Jobs exported or saved from sites without a search API can be added
-in the dashboard or imported from `data/import/jobs.json`; use
-`config/import.example.json` as the shape.
+Alternatively, set `RESUME_PATH` in `.env`. Generate the private structured
+profile and inspect only the extracted skill labels:
 
-LinkedIn, Indeed, and Dice appear as outbound search indexes in the
-dashboard. They are intentionally not scraped: their public developer
-offerings do not provide a general job-seeker search feed, and automated
-extraction is restricted by their terms. Search there, then use **Add job**
-to place a relevant posting in the same local index and matcher.
+```sh
+npm run profile
+```
 
-`sources.json` has empty `boards[]` (Greenhouse) and `companies[]`
-(Lever) arrays. Those are your target-company lists: add the token from
-a company's job board URL, e.g. `"cloudflare"` from
-boards.greenhouse.io/cloudflare. These two sources matter most because
-they are the ones the future apply engine can actually submit to.
+The generated `data/docs/candidate-profile.json` stays local. Update the
+resume and rerun `npm run profile && npm run reindex` whenever experience or
+skills change.
+
+### 3. Configure API-backed sources
+
+Edit `.env` and replace placeholders with real values:
+
+| Source | Variables | Setup |
+| --- | --- | --- |
+| Adzuna | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | Register a free application at `developer.adzuna.com`. |
+| USAJobs | `USAJOBS_API_KEY`, `USAJOBS_EMAIL` | Request a key at `developer.usajobs.gov`; the email must exactly match the registration. |
+
+Placeholder values are treated as unconfigured, so these sources skip cleanly
+until valid credentials are present.
+
+Remotive, RemoteOK, and Jobicy require no keys. Their queries are derived from
+the resume and title criteria where supported.
+
+### 4. Configure target-company ATS boards
+
+Edit `config/sources.json`. Add only companies you want to monitor:
+
+| ATS | Configuration | Identifier location |
+| --- | --- | --- |
+| Greenhouse | `greenhouse.boards[]` | Token after `boards.greenhouse.io/` or `job-boards.greenhouse.io/`. |
+| Lever | `lever.companies[]` | Company slug after `jobs.lever.co/`. |
+| Ashby | `ashby.boards[]` | Board name after `jobs.ashbyhq.com/`. |
+| SmartRecruiters | `smartrecruiters.companies[]` | Identifier after `careers.smartrecruiters.com/`. |
+| Workable | `workable.accounts[]` | Account subdomain shown in the Workable careers URL. |
+
+Example:
+
+```json
+{
+  "greenhouse": { "enabled": true, "boards": ["company-token"] },
+  "lever": { "enabled": true, "companies": ["company-slug"] },
+  "ashby": { "enabled": true, "boards": ["company-board"] },
+  "smartrecruiters": { "enabled": true, "companies": ["CompanyIdentifier"] },
+  "workable": { "enabled": true, "accounts": ["account-subdomain"] }
+}
+```
+
+Keep the other keys already present in `config/sources.json`; the example is
+only showing the fields to populate.
+
+### 5. Configure matching and eligibility
+
+Edit `config/criteria.json`:
+
+- `titles.must_match_any`: high-confidence role titles.
+- `titles.resume_assisted`: broader titles that require at least two resume
+  skill signals.
+- `titles.exclude`: titles that are always rejected.
+- `salary.floor_usd` and `salary.accept_missing_salary`.
+- `location.home`, `radius_miles`, remote policy, and metro keywords.
+- `eligibility.allow_contract`.
+- `eligibility.allow_clearance_required`.
+- `eligibility.require_sponsorship`.
+- `weekly_apply_cap`.
+
+The eligibility defaults are permissive because citizenship, clearance, and
+sponsorship status cannot safely be inferred from a resume. Set them explicitly.
+
+### 6. Import LinkedIn, Indeed, and Dice results
+
+Those sites do not provide an approved general job-search feed for this use.
+The dashboard provides outbound searches; open a result and use **Add job** to
+index it locally.
+
+For batch imports:
+
+```sh
+mkdir -p data/import
+cp config/import.example.json data/import/jobs.json
+```
+
+Edit `data/import/jobs.json`, or append one JSON object per line to
+`data/import/alerts.jsonl`. This JSONL inbox is suitable for a user-controlled
+email-alert automation. Each record may include:
+
+```json
+{
+  "source": "linkedin",
+  "sourceId": "site-posting-id",
+  "title": "Senior Cloud Security Engineer",
+  "company": "Example Company",
+  "location": "Remote - US",
+  "remote": true,
+  "salaryMin": 150000,
+  "salaryMax": 190000,
+  "currency": "USD",
+  "url": "https://example.com/job",
+  "description": "Full posting text",
+  "postedAt": "2026-09-13",
+  "expiresAt": null,
+  "employmentType": "full-time",
+  "workplaceType": "remote",
+  "seniority": "senior"
+}
+```
+
+Do not automate scraping LinkedIn, Indeed, or Dice pages. Import content you
+personally saved or received through your own alerts.
+
+### 7. Build the first index and launch
+
+```sh
+npm run profile
+npm run fetch:once
+npm run reindex
+npm test
+```
+
+Start these in separate terminals:
+
+```sh
+npm run api
+npm run worker
+```
+
+Open <http://127.0.0.1:3001>. The worker runs once at startup and then at 7am,
+1pm, and 7pm America/New_York by default.
+
+## Environment reference
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ADZUNA_APP_ID` | none | Adzuna application ID. |
+| `ADZUNA_APP_KEY` | none | Adzuna application key. |
+| `USAJOBS_API_KEY` | none | USAJobs API key. |
+| `USAJOBS_EMAIL` | none | Email registered with USAJobs. |
+| `JOB_DB_PATH` | `./data/jobs.sqlite` | SQLite ledger location. |
+| `RESUME_PATH` | `./data/docs/resume.cv` | Resume used for local matching. |
+| `FETCH_CRON` | `0 7,13,19 * * *` | Fetch schedule in America/New_York. |
+| `API_HOST` | `127.0.0.1` | API bind address. Keep this local unless authentication is added. |
+| `API_PORT` | `3001` | Dashboard/API port. |
+
+## Routine operation
+
+```sh
+npm run fetch:once   # fetch all enabled sources immediately
+npm run reindex      # re-score every posting after config/resume changes
+npm run profile      # regenerate the local candidate profile
+npm run backup       # online-safe SQLite backup under data/backups/
+npm test             # no network required
+```
+
+Useful endpoints:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/health` | Database status and last successful worker run. |
+| `GET /api/stats` | Lifecycle counts, governor, and source summaries. |
+| `GET /api/metrics` | Source yield/errors and structured feedback totals. |
+| `GET /api/digest?hours=72` | Highest-scoring recent matches. |
+| `GET /api/search?q=terraform` | Local FTS5 search. |
+| `GET /api/profile` | Extracted local profile, not the resume text. |
+
+Postings not seen for `stale_after_days` in `config/sources.json` are hidden
+from normal queues but retained in the ledger. Reappearing postings are
+refreshed and made active again. Source errors do not erase postings.
+
+When skipping or rejecting a job, record a reason. Feedback metrics make it
+possible to identify weak sources and tune title/skill rules with evidence.
 
 ## Docker
 
-    cp .env.example .env      # fill it in first
-    docker compose up -d --build
-    docker compose logs -f worker
+Confirm that both commands work first:
 
-Two services from one image: `api` (dashboard on 127.0.0.1:3001) and
-`worker` (scheduled fetching). The SQLite ledger lives in `./data` on
-the host; back that directory up and you have backed up everything.
+```sh
+docker --version
+docker compose version
+```
 
-The API has no authentication yet and compose deliberately binds it to
-localhost only. Do not expose it to the internet as-is.
+Then:
 
-## The lifecycle
+```sh
+cp .env.example .env
+# complete .env and config/sources.json
+docker compose up -d --build
+docker compose logs -f worker
+docker compose ps
+```
 
-    new -> matched -> queued -> applied -> needs_followup -> followed_up
-             |          |         |              |
-             +----------+---------+--- skipped / rejected
+Compose binds the API to `127.0.0.1:3001`, mounts `./data`, and includes an API
+health check. The worker container shares the same SQLite ledger.
 
-Illegal transitions throw at the database layer and 409 at the API, so
-nothing skips a step or quietly corrupts the weekly count. `skipped`
-jobs can be manually rescued back to `matched` from the dashboard.
+## Data model and lifecycle
 
-Entering `applied` is only possible through `POST /api/jobs/:id/apply`,
-which is gated by the governor and records the application against the
-current ISO week in one motion.
+Each canonical job can have multiple `job_sources` records. Refreshes update
+salary, description, location, provenance, and last-seen state without
+discarding application history.
 
-## Testing
+```text
+new -> matched -> queued -> applied -> needs_followup -> followed_up
+         |          |         |              |
+         +----------+---------+--- skipped / rejected
+```
 
-    npm test
-
-Covers the matcher, dedupe, geo math, state machine enforcement,
-governor semantics, and the API contract. Tests write to a throwaway
-database in /tmp and never touch your real ledger.
+Entering `applied` is only possible through `POST /api/jobs/:id/apply`. The
+governor check, status transition, history entry, and application record are
+one SQLite transaction.
 
 ## Troubleshooting
 
-- `injected env (0)` at startup: your .env is empty, keyed sources
-  will skip.
-- Adzuna 401: bad app id/key pair.
-- USAJobs 401: the email in USAJOBS_EMAIL must exactly match the one
-  registered with the key.
-- Everything lands in `skipped`: open the dashboard, read the stored
-  match reasons, and tune `config/criteria.json` with evidence.
-- Reset to a clean slate: stop everything, delete `data/jobs.sqlite*`.
+- Keyed source skips: replace placeholder values in `.env`.
+- Adzuna 401: verify the application ID/key pair.
+- USAJobs 401: verify that `USAJOBS_EMAIL` exactly matches the registered email.
+- ATS source returns zero: verify the company identifier in the public board URL.
+- Everything is skipped: inspect stored reasons, then adjust title, salary,
+  location, or eligibility settings and run `npm run reindex`.
+- Worker appears stale: check `/api/health`, `/api/metrics`, and worker logs.
+- Docker command missing: install the Docker Compose v2 plugin or use the two
+  local npm processes.
+- Database recovery: restore the newest file from `data/backups/` while both
+  processes are stopped.
 
-## Author
+## Security boundary
 
-**Melovagabond**
+The app has no user authentication. Keep `API_HOST=127.0.0.1` and do not expose
+the dashboard through a public reverse proxy. Resume, imported postings,
+application notes, backups, and the SQLite ledger are private local data.

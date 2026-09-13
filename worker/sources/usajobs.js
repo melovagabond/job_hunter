@@ -4,6 +4,7 @@
 
 const { normalize } = require('../lib/normalize');
 const { isConfigured } = require('../lib/env');
+const { fetchWithPolicy } = require('../lib/http');
 
 function parseRemuneration(item) {
   const rem = item.PositionRemuneration && item.PositionRemuneration[0];
@@ -42,7 +43,7 @@ async function fetchUsaJobs(cfg) {
       ResultsPerPage: '100',
       Page: String(page)
     });
-    const res = await fetch(`https://data.usajobs.gov/api/search?${params}`, { headers });
+    const res = await fetchWithPolicy(`https://data.usajobs.gov/api/search?${params}`, { headers });
     if (!res.ok) {
       console.warn(`[usajobs] page ${page} HTTP ${res.status}, stopping`);
       break;
@@ -66,6 +67,10 @@ async function fetchUsaJobs(cfg) {
         url: d.PositionURI,
         description: d.UserArea?.Details?.JobSummary,
         postedAt: d.PublicationStartDate,
+        expiresAt: d.ApplicationCloseDate,
+        employmentType: Array.isArray(d.PositionSchedule)
+          ? d.PositionSchedule.map(item => item.Name).filter(Boolean).join(', ')
+          : null,
         lat: parseFloat(loc.Latitude),
         lon: parseFloat(loc.Longitude)
       }));

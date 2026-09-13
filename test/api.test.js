@@ -169,3 +169,23 @@ test('manual import normalizes, matches, and becomes searchable', async () => {
   assert.strictEqual(searched.status, 200);
   assert.ok(searched.body.some(job => job.company === 'Imported Co'));
 });
+
+test('feedback, digest, metrics, and health expose operational state', async () => {
+  const row = db.connect().prepare("SELECT id FROM jobs WHERE company = 'Imported Co'").get();
+  const feedback = await req('POST', `/api/jobs/${row.id}/feedback`, {
+    action: 'queue', reason: 'strong_resume_alignment'
+  });
+  assert.strictEqual(feedback.status, 201);
+
+  const metrics = await req('GET', '/api/metrics');
+  assert.strictEqual(metrics.status, 200);
+  assert.ok(metrics.body.feedback.some(item => item.reason === 'strong_resume_alignment'));
+
+  const digest = await req('GET', '/api/digest?hours=72');
+  assert.strictEqual(digest.status, 200);
+  assert.ok(digest.body.some(job => job.company === 'Imported Co'));
+
+  const health = await req('GET', '/api/health');
+  assert.strictEqual(health.status, 200);
+  assert.strictEqual(health.body.database, true);
+});

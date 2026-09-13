@@ -1,4 +1,6 @@
 {
+  "concurrency": 3,
+  "stale_after_days": 14,
   "adzuna": {
     "enabled": true,
     "country": "us",
@@ -18,6 +20,8 @@
   },
   "remotive": {
     "enabled": true,
+    "resume_queries": true,
+    "max_queries": 6,
     "searches": ["devsecops", "cloud security", "security architect", "cybersecurity"]
   },
   "remoteok": {
@@ -37,11 +41,28 @@
     "count": 100,
     "geo": "usa",
     "industry": "engineering",
+    "resume_queries": true,
+    "max_queries": 6,
     "tags": ["devsecops", "cloud security", "security architect", "cybersecurity"]
+  },
+  "ashby": {
+    "enabled": true,
+    "boards": []
+  },
+  "smartrecruiters": {
+    "enabled": true,
+    "companies": [],
+    "country": "us",
+    "max_pages": 3,
+    "results_per_page": 100
+  },
+  "workable": {
+    "enabled": true,
+    "accounts": []
   },
   "imports": {
     "enabled": true,
-    "files": ["data/import/jobs.json"]
+    "files": ["data/import/jobs.json", "data/import/alerts.jsonl"]
   },
   "dice": {
     "enabled": false,

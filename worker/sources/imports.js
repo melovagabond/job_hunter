@@ -7,7 +7,11 @@ const { normalize } = require('../lib/normalize');
 
 function loadFile(file) {
   if (!fs.existsSync(file)) return [];
-  const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const raw = fs.readFileSync(file, 'utf8');
+  if (file.endsWith('.jsonl')) {
+    return raw.split(/\r?\n/).filter(line => line.trim()).map(line => JSON.parse(line));
+  }
+  const parsed = JSON.parse(raw);
   return Array.isArray(parsed) ? parsed : parsed.jobs || [];
 }
 
@@ -28,7 +32,11 @@ async function fetchImports(cfg) {
         currency: j.currency,
         url: j.url,
         description: j.description,
-        postedAt: j.postedAt || j.posted_at
+        postedAt: j.postedAt || j.posted_at,
+        expiresAt: j.expiresAt || j.expires_at,
+        employmentType: j.employmentType || j.employment_type,
+        workplaceType: j.workplaceType || j.workplace_type,
+        seniority: j.seniority
       }));
     }
   }

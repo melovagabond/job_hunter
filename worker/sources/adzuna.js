@@ -5,6 +5,7 @@
 
 const { normalize } = require('../lib/normalize');
 const { isConfigured } = require('../lib/env');
+const { fetchWithPolicy } = require('../lib/http');
 
 async function fetchAdzuna(cfg, criteria) {
   const id = process.env.ADZUNA_APP_ID;
@@ -27,7 +28,7 @@ async function fetchAdzuna(cfg, criteria) {
       content_type: 'application/json'
     });
     const url = `https://api.adzuna.com/v1/api/jobs/${cfg.country}/search/${page}?${params}`;
-    const res = await fetch(url);
+    const res = await fetchWithPolicy(url);
     if (!res.ok) {
       console.warn(`[adzuna] page ${page} HTTP ${res.status}, stopping`);
       break;
@@ -48,6 +49,7 @@ async function fetchAdzuna(cfg, criteria) {
         url: r.redirect_url,
         description: r.description,
         postedAt: r.created,
+        employmentType: r.contract_time || r.contract_type,
         lat: r.latitude,
         lon: r.longitude
       }));

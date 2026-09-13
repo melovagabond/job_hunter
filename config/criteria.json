@@ -56,5 +56,11 @@
       "blue bell", "media, pa", "west chester, pa", "exton", "chesterbrook"
     ]
   },
+  "eligibility": {
+    "allow_contract": true,
+    "allow_clearance_required": true,
+    "require_sponsorship": false,
+    "accept_unknown_employment_type": true
+  },
   "weekly_apply_cap": 100
 }

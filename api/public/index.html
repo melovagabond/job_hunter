@@ -82,6 +82,13 @@
     width: min(520px, calc(100vw - 48px)); padding: 12px;
     background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
   }
+  .metrics-panel {
+    position: absolute; z-index: 2; right: 24px; margin-top: 8px;
+    width: min(620px, calc(100vw - 48px)); max-height: 420px; overflow: auto;
+    padding: 12px; white-space: pre-wrap; background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 4px; color: var(--dim);
+    font: 12px/1.6 var(--mono);
+  }
   .import-panel label { display: block; color: var(--dim); font: 12px var(--mono); margin: 7px 0 3px; }
   .import-panel input, .import-panel select, .import-panel textarea { width: 100%; }
   .import-panel textarea { min-height: 110px; resize: vertical; }
@@ -145,6 +152,18 @@
     <input id="search-query" type="search" placeholder="Search the local job index" required>
     <button type="submit">Search</button>
   </form>
+  <select id="source-filter" aria-label="Filter by source"><option value="">all sources</option></select>
+  <select id="sort-filter" aria-label="Sort jobs">
+    <option value="score">best match</option>
+    <option value="newest">newest</option>
+    <option value="salary">highest salary</option>
+  </select>
+  <select id="age-filter" aria-label="Filter by age">
+    <option value="">any age</option><option value="1">24 hours</option>
+    <option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option>
+  </select>
+  <button id="digest-button" type="button">Digest</button>
+  <details id="metrics-details"><summary>Metrics</summary><div class="metrics-panel" id="metrics-panel">loading</div></details>
   <div class="indexes" id="indexes"></div>
   <details id="import-details">
     <summary>Add job</summary>
@@ -193,6 +212,7 @@ const ACTIONS = {
 
 let current = 'matched';
 let searchQuery = '';
+let availableSourcesLoaded = false;
 
 const fmt = {
   salary: j => {
@@ -256,6 +276,16 @@ async function loadStats() {
     Math.min(100, (g.applied_this_week / g.cap) * 100) + '%"></div></div>';
 
   const counts = s.by_status;
+  if (!availableSourcesLoaded) {
+    const sourceFilter = document.getElementById('source-filter');
+    for (const source of s.available_sources || []) {
+      const option = document.createElement('option');
+      option.value = source;
+      option.textContent = source;
+      sourceFilter.appendChild(option);
+    }
+    availableSourcesLoaded = true;
+  }
   const nav = document.getElementById('pipeline');
   nav.innerHTML = '';
   const mkBtn = (st) => {
@@ -296,14 +326,22 @@ async function act(id, to) {
       await api('/api/jobs/' + id + '/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resume_variant: variant })
+        body: JSON.stringify({ resume_variant: variant, reason: 'application_submitted' })
       });
       toast('Application recorded');
     } else {
+      let reason = to === 'queued' ? 'good_fit' : null;
+      if (to === 'skipped' || to === 'rejected') {
+        reason = prompt(
+          'Reason (wrong_role, compensation, location, clearance, staffing_agency, weak_fit, closed, other):',
+          to === 'skipped' ? 'wrong_role' : 'weak_fit'
+        );
+        if (reason === null) return;
+      }
       await api('/api/jobs/' + id + '/transition', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to })
+        body: JSON.stringify({ to, reason })
       });
       toast('Moved to ' + to.replace('_', ' '));
     }
@@ -333,18 +371,40 @@ async function toggleDetail(el, id) {
     escapeHtml(h.changed_at) + '  ' + escapeHtml(h.from_status || 'start') +
       ' -&gt; ' + escapeHtml(h.to_status)
   ).join('<br>');
+  const sources = (j.sources || []).map(source =>
+    escapeHtml(source.source) + ' seen ' + escapeHtml(source.last_seen_at)
+  ).join('<br>');
+  const feedback = (j.feedback || []).map(item =>
+    escapeHtml(item.action) + ':' + escapeHtml(item.reason)
+  ).join('  ');
+  const missing = j.missing_skills
+    ? JSON.parse(j.missing_skills).map(escapeHtml).join(', ')
+    : '';
+  const breakdown = j.match_breakdown ? escapeHtml(j.match_breakdown) : '';
   d.innerHTML =
     (reasons ? '<div class="reasons">' + reasons + '</div>' : '') +
+    (missing ? '<div class="reasons">job skills not in resume: ' + missing + '</div>' : '') +
+    (breakdown ? '<div class="reasons">score: ' + breakdown + '</div>' : '') +
     '<div class="desc">' + escapeHtml(
       plainText(j.description || 'No description captured.')
     ) + '</div>' +
-    (hist ? '<div class="hist">' + hist + '</div>' : '');
+    (sources ? '<div class="hist">sources<br>' + sources + '</div>' : '') +
+    (feedback ? '<div class="hist">feedback: ' + feedback + '</div>' : '') +
+    (hist ? '<div class="hist">history<br>' + hist + '</div>' : '');
 }
 
 async function loadJobs() {
+  const source = document.getElementById('source-filter').value;
+  const sort = document.getElementById('sort-filter').value;
+  const days = document.getElementById('age-filter').value;
+  const params = new URLSearchParams({ status: current, sort });
+  if (source) params.set('source', source);
+  if (days) params.set('days', days);
   const jobs = current === 'search'
     ? await api('/api/search?q=' + encodeURIComponent(searchQuery))
-    : await api('/api/jobs?status=' + current);
+    : current === 'digest'
+      ? await api('/api/digest?hours=72')
+      : await api('/api/jobs?' + params);
   const list = document.getElementById('list');
   list.innerHTML = '';
   if (jobs.length === 0) {
@@ -365,6 +425,7 @@ async function loadJobs() {
         : escapeHtml(j.location || 'location unknown'),
       fmt.salary(j) ? '<span class="money">' + fmt.salary(j) + '</span>' : null,
       j.match_score != null ? 'score ' + escapeHtml(j.match_score) : null,
+      j.is_stale ? 'stale' : null,
       fmt.date(j.posted_at) ? escapeHtml(fmt.date(j.posted_at)) : null
     ].filter(Boolean).join('<span aria-hidden="true"> &middot; </span>');
 
@@ -398,6 +459,30 @@ document.getElementById('search-form').addEventListener('submit', (event) => {
   if (!searchQuery) return;
   current = 'search';
   refresh();
+});
+
+for (const id of ['source-filter', 'sort-filter', 'age-filter']) {
+  document.getElementById(id).addEventListener('change', () => {
+    if (!['search', 'digest'].includes(current)) refresh();
+  });
+}
+document.getElementById('digest-button').addEventListener('click', () => {
+  current = 'digest';
+  refresh();
+});
+document.getElementById('metrics-details').addEventListener('toggle', async (event) => {
+  if (!event.currentTarget.open) return;
+  const metrics = await api('/api/metrics');
+  const sourceLines = metrics.sources.map(source =>
+    `${source.source}: ${source.inserted || 0} new / ${source.fetched || 0} fetched, ` +
+    `${source.matched || 0} matched, ${source.errors || 0} errors, ${source.avg_duration_ms || 0}ms avg`
+  );
+  const feedbackLines = metrics.feedback.map(item =>
+    `${item.action}:${item.reason} = ${item.n}`
+  );
+  document.getElementById('metrics-panel').textContent =
+    'SOURCE YIELD\n' + (sourceLines.join('\n') || 'No completed runs yet') +
+    '\n\nREVIEW FEEDBACK\n' + (feedbackLines.join('\n') || 'No feedback yet');
 });
 
 document.getElementById('import-form').addEventListener('submit', async (event) => {

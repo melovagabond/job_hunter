@@ -11,6 +11,10 @@
     "currency": "USD",
     "url": "https://www.linkedin.com/jobs/view/example",
     "description": "Paste the job description here.",
-    "postedAt": "2026-09-13"
+    "postedAt": "2026-09-13",
+    "expiresAt": null,
+    "employmentType": "full-time",
+    "workplaceType": "remote",
+    "seniority": "senior"
   }
 ]

@@ -14,6 +14,8 @@ const { haversineMiles } = require('../worker/lib/geo');
 const { isConfigured } = require('../worker/lib/env');
 const { extractProfile, scoreAgainstProfile } = require('../worker/lib/profile');
 const { annualSalary } = require('../worker/sources/jobicy');
+const { parseAnnualSalary } = require('../worker/lib/salary');
+const { analyzeEligibility } = require('../worker/lib/match');
 
 const criteria = JSON.parse(fs.readFileSync(
   path.join(__dirname, '..', 'config', 'criteria.json'), 'utf8'
@@ -48,6 +50,32 @@ test('same job from two sources collapses to one row', () => {
   assert.strictEqual(r1.inserted, true);
   assert.strictEqual(r2.inserted, false);
   assert.strictEqual(r1.id, r2.id);
+  const sources = db.connect().prepare(
+    'SELECT COUNT(*) n FROM job_sources WHERE job_id = ?'
+  ).get(r1.id);
+  assert.strictEqual(sources.n, 2);
+});
+
+test('same title at distinct locations remains distinct', () => {
+  const a = makeJob({ sourceId: 'loc-a', company: 'Multi Site', location: 'Philadelphia, PA' });
+  const b = makeJob({ sourceId: 'loc-b', company: 'Multi Site', location: 'Austin, TX' });
+  assert.notStrictEqual(db.upsertJob(a).id, db.upsertJob(b).id);
+});
+
+test('a repeated source posting refreshes canonical fields and provenance', () => {
+  const original = makeJob({ sourceId: 'refresh-1', company: 'Refresh Co', salaryMax: 150000 });
+  const first = db.upsertJob(original);
+  const second = db.upsertJob(makeJob({
+    sourceId: 'refresh-1', company: 'Refresh Co', salaryMax: 190000,
+    description: 'A much longer refreshed Kubernetes security description.'
+  }));
+  assert.strictEqual(second.id, first.id);
+  assert.strictEqual(second.updated, true);
+  const row = db.connect().prepare('SELECT salary_max, description FROM jobs WHERE id = ?').get(first.id);
+  assert.strictEqual(row.salary_max, 190000);
+  assert.match(row.description, /refreshed Kubernetes/);
+  const sources = db.connect().prepare('SELECT COUNT(*) n FROM job_sources WHERE job_id = ?').get(first.id);
+  assert.strictEqual(sources.n, 1);
 });
 
 test('matcher accepts a qualifying Philly job', () => {
@@ -201,4 +229,34 @@ test('Jobicy salaries are annualized without turning missing values into zero', 
   assert.strictEqual(annualSalary(12000, 'monthly'), 144000);
   assert.strictEqual(annualSalary(null, 'yearly'), undefined);
   assert.strictEqual(annualSalary('', 'yearly'), undefined);
+});
+
+test('salary text and eligibility signals are normalized', () => {
+  assert.deepStrictEqual(parseAnnualSalary('$145K - $190,000'), {
+    salaryMin: 145000, salaryMax: 190000
+  });
+  const result = analyzeEligibility({
+    title: 'Cloud Security Engineer',
+    description: 'US citizen with a Secret clearance. No visa sponsorship.',
+    employment_type: 'contract'
+  }, { eligibility: {
+    allow_contract: false,
+    allow_clearance_required: false,
+    require_sponsorship: true
+  }});
+  assert.ok(result.blockers.includes('contract_not_accepted'));
+  assert.ok(result.blockers.includes('clearance_required'));
+  assert.ok(result.blockers.includes('sponsorship_unavailable'));
+});
+
+test('source run metrics preserve yield and timing', () => {
+  const run = db.startSourceRun('test-source');
+  db.finishSourceRun(run, {
+    status: 'ok', fetched: 10, inserted: 3, updated: 7,
+    matched: 2, skipped: 1, duration_ms: 125
+  });
+  const metric = db.sourceMetrics().find(row => row.source === 'test-source');
+  assert.strictEqual(metric.fetched, 10);
+  assert.strictEqual(metric.inserted, 3);
+  assert.strictEqual(metric.avg_duration_ms, 125);
 });

@@ -3,9 +3,10 @@
 // by storing their URL as the apply link. No key required.
 
 const { normalize } = require('../lib/normalize');
+const { fetchWithPolicy } = require('../lib/http');
 
 async function fetchRemoteOk(cfg) {
-  const res = await fetch('https://remoteok.com/api', {
+  const res = await fetchWithPolicy('https://remoteok.com/api', {
     headers: { 'User-Agent': 'job_hunter self-hosted (personal use)' }
   });
   if (!res.ok) {

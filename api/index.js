@@ -14,6 +14,7 @@ const { evaluate } = require('../worker/lib/match');
 const { loadProfile } = require('../worker/lib/profile');
 
 const PORT = process.env.API_PORT || 3001;
+const HOST = process.env.API_HOST || '127.0.0.1';
 const VALID_STATUSES = Object.keys(db.TRANSITIONS);
 
 function weeklyCap() {
@@ -27,13 +28,25 @@ function buildApp(options = {}) {
   app.use(express.json({ limit: '256kb' }));
   app.use(express.static(path.join(__dirname, 'public')));
 
-  app.get('/api/health', (req, res) => res.json({ ok: true }));
+  app.get('/api/health', (req, res) => {
+    const conn = db.connect();
+    const lastRun = conn.prepare(
+      "SELECT MAX(finished_at) AS value FROM source_runs WHERE status = 'ok'"
+    ).get().value;
+    res.json({ ok: true, database: true, last_worker_success: lastRun });
+  });
 
   app.get('/api/stats', (req, res) => {
+    const conn = db.connect();
     res.json({
       by_status: db.countByStatus(),
+      stale: conn.prepare('SELECT COUNT(*) AS n FROM jobs WHERE is_stale = 1').get().n,
       governor: governor.status(getWeeklyCap()),
-      week: db.isoWeekKey()
+      week: db.isoWeekKey(),
+      sources: db.sourceMetrics(),
+      available_sources: conn.prepare(
+        'SELECT DISTINCT source FROM job_sources ORDER BY source'
+      ).all().map(row => row.source)
     });
   });
 
@@ -46,7 +59,26 @@ function buildApp(options = {}) {
     const limit = Number.isFinite(parsedLimit)
       ? Math.max(1, Math.min(parsedLimit, 500))
       : 100;
-    res.json(db.getByStatus(status, limit));
+    const minScore = req.query.min_score == null ? null : Number(req.query.min_score);
+    const days = req.query.days == null ? null : Number(req.query.days);
+    res.json(db.getByStatus(status, {
+      limit,
+      source: req.query.source ? String(req.query.source) : null,
+      minScore: Number.isFinite(minScore) ? minScore : null,
+      days: Number.isFinite(days) ? days : null,
+      sort: ['score', 'newest', 'salary'].includes(req.query.sort) ? req.query.sort : 'score',
+      includeStale: req.query.include_stale === 'true'
+    }));
+  });
+
+  app.get('/api/metrics', (req, res) => {
+    res.json({ sources: db.sourceMetrics(), feedback: db.feedbackMetrics() });
+  });
+
+  app.get('/api/digest', (req, res) => {
+    const hours = Number(req.query.hours || 72);
+    const limit = Number(req.query.limit || 20);
+    res.json(db.digest(hours, limit));
   });
 
   app.get('/api/search', (req, res) => {
@@ -109,7 +141,11 @@ function buildApp(options = {}) {
       currency: raw.currency,
       url: raw.url,
       description: raw.description,
-      postedAt: raw.postedAt || raw.posted_at
+      postedAt: raw.postedAt || raw.posted_at,
+      expiresAt: raw.expiresAt || raw.expires_at,
+      employmentType: raw.employmentType || raw.employment_type,
+      workplaceType: raw.workplaceType || raw.workplace_type,
+      seniority: raw.seniority
     });
     if (!job) return res.status(400).json({ error: 'title is required' });
 
@@ -124,7 +160,10 @@ function buildApp(options = {}) {
       const verdict = evaluate(job, JSON.parse(fs.readFileSync(
         path.join(__dirname, '..', 'config', 'criteria.json'), 'utf8'
       )), loadProfile());
-      db.setMatchResult(result.id, verdict.score, verdict.reasons);
+      db.setMatchResult(
+        result.id, verdict.score, verdict.reasons,
+        verdict.breakdown, verdict.missingSkills
+      );
       const status = verdict.matched ? 'matched' : 'skipped';
       db.transition(result.id, status, verdict.reasons.join(','));
       res.status(201).json({
@@ -143,14 +182,34 @@ function buildApp(options = {}) {
     const history = conn.prepare(
       'SELECT from_status, to_status, note, changed_at FROM status_history WHERE job_id = ? ORDER BY id'
     ).all(req.params.id);
-    res.json({ ...job, history });
+    const sources = conn.prepare(
+      'SELECT source, source_id, url, first_seen_at, last_seen_at FROM job_sources WHERE job_id = ? ORDER BY last_seen_at DESC'
+    ).all(req.params.id);
+    const feedback = conn.prepare(
+      'SELECT action, reason, detail, created_at FROM job_feedback WHERE job_id = ? ORDER BY id'
+    ).all(req.params.id);
+    res.json({ ...job, history, sources, feedback });
+  });
+
+  app.post('/api/jobs/:id/feedback', (req, res) => {
+    const { action, reason, detail } = req.body || {};
+    if (!action || !reason) {
+      return res.status(400).json({ error: 'action and reason are required' });
+    }
+    try {
+      const id = db.recordFeedback(req.params.id, action, String(reason).slice(0, 80),
+        detail ? String(detail).slice(0, 1000) : null);
+      res.status(201).json({ id });
+    } catch (err) {
+      res.status(/invalid feedback/.test(err.message) ? 400 : 500).json({ error: err.message });
+    }
   });
 
   // Generic transition for everything EXCEPT entering 'applied', which
   // must go through /apply so the governor and the applications table
   // stay consistent.
   app.post('/api/jobs/:id/transition', (req, res) => {
-    const { to, note } = req.body || {};
+    const { to, note, reason } = req.body || {};
     if (!to || !VALID_STATUSES.includes(to)) {
       return res.status(400).json({ error: `invalid target status: ${to}` });
     }
@@ -159,6 +218,13 @@ function buildApp(options = {}) {
     }
     try {
       const result = db.transition(req.params.id, to, note || 'via api');
+      if (reason) {
+        const action = to === 'queued' ? 'queue'
+          : to === 'skipped' ? 'skip'
+            : to === 'rejected' ? 'reject'
+              : to === 'followed_up' || to === 'needs_followup' ? 'followup' : 'note';
+        db.recordFeedback(req.params.id, action, String(reason).slice(0, 80), note || null);
+      }
       res.json(result);
     } catch (err) {
       const code = /illegal transition/.test(err.message) ? 409 : 500;
@@ -180,6 +246,9 @@ function buildApp(options = {}) {
           error: 'governor_blocked', governor: result.governor
         });
       }
+      if (req.body?.reason) {
+        db.recordFeedback(req.params.id, 'apply', String(req.body.reason).slice(0, 80), notes || null);
+      }
       res.json(result);
     } catch (err) {
       const code = /not found/.test(err.message)
@@ -195,7 +264,13 @@ function buildApp(options = {}) {
 module.exports = { buildApp };
 
 if (require.main === module) {
-  buildApp().listen(PORT, () => {
+  const server = buildApp().listen(PORT, HOST, () => {
     console.log(`[api] listening on http://localhost:${PORT}`);
   });
+  const shutdown = () => server.close(() => {
+    db.close();
+    process.exit(0);
+  });
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }

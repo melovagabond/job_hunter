@@ -4,12 +4,13 @@
 // e.g. "netflix" from jobs.lever.co/netflix. No key required.
 
 const { normalize } = require('../lib/normalize');
+const { fetchWithPolicy } = require('../lib/http');
 
 async function fetchLever(cfg) {
   const jobs = [];
   for (const company of cfg.companies) {
     const url = `https://api.lever.co/v0/postings/${company}?mode=json`;
-    const res = await fetch(url);
+    const res = await fetchWithPolicy(url);
     if (!res.ok) {
       console.warn(`[lever:${company}] HTTP ${res.status}, skipping company`);
       continue;
@@ -25,7 +26,9 @@ async function fetchLever(cfg) {
         remote: (j.workplaceType || '').toLowerCase() === 'remote',
         url: j.hostedUrl,
         description: j.descriptionPlain,
-        postedAt: j.createdAt ? new Date(j.createdAt).toISOString() : null
+        postedAt: j.createdAt ? new Date(j.createdAt).toISOString() : null,
+        employmentType: j.categories && j.categories.commitment,
+        workplaceType: j.workplaceType
       }));
     }
   }

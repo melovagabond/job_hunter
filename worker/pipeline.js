@@ -16,6 +16,9 @@ const SOURCES = {
   greenhouse: require('./sources/greenhouse'),
   lever: require('./sources/lever'),
   jobicy: require('./sources/jobicy'),
+  ashby: require('./sources/ashby'),
+  smartrecruiters: require('./sources/smartrecruiters'),
+  workable: require('./sources/workable'),
   imports: require('./sources/imports')
 };
 
@@ -30,40 +33,98 @@ async function runPipeline() {
   const profile = loadProfile();
 
   const stats = {
-    fetched: 0, new: 0, duplicates: 0, matched: 0, skipped: 0, errors: []
+    fetched: 0, new: 0, updated: 0, duplicates: 0,
+    matched: 0, skipped: 0, stale: 0, errors: []
   };
 
-  for (const [name, mod] of Object.entries(SOURCES)) {
+  const enabled = Object.entries(SOURCES).filter(([name]) => {
     const cfg = sourcesCfg[name];
-    if (!cfg || !cfg.enabled) continue;
+    return cfg && cfg.enabled;
+  });
 
-    let jobs = [];
+  async function fetchOne([name, mod]) {
+    const cfg = sourcesCfg[name];
+    const runId = db.startSourceRun(name);
+    const started = Date.now();
+
     try {
-      jobs = await mod.fetch(cfg, criteria);
+      const jobs = await mod.fetch(cfg, criteria, profile);
       console.log(`[${name}] fetched ${jobs.length}`);
+      return { name, jobs, runId, started, fetchDuration: Date.now() - started };
     } catch (err) {
       console.error(`[${name}] failed: ${err.message}`);
-      stats.errors.push({ source: name, error: err.message });
-      continue;
-    }
-    stats.fetched += jobs.length;
-
-    for (const job of jobs) {
-      const { inserted, id } = db.upsertJob(job);
-      if (!inserted) { stats.duplicates++; continue; }
-      stats.new++;
-
-      const verdict = evaluate(job, criteria, profile);
-      db.setMatchResult(id, verdict.score, verdict.reasons);
-      if (verdict.matched) {
-        db.transition(id, 'matched', verdict.reasons.join(','));
-        stats.matched++;
-      } else {
-        db.transition(id, 'skipped', verdict.reasons.join(','));
-        stats.skipped++;
-      }
+      db.finishSourceRun(runId, {
+        status: 'error', error: err.message, duration_ms: Date.now() - started
+      });
+      return { name, jobs: [], runId, started, error: err.message };
     }
   }
+
+  async function mapLimit(items, limit, mapper) {
+    const results = new Array(items.length);
+    let next = 0;
+    async function worker() {
+      while (next < items.length) {
+        const index = next++;
+        results[index] = await mapper(items[index]);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return results;
+  }
+
+  const fetchedSources = await mapLimit(
+    enabled, Math.max(1, sourcesCfg.concurrency || 3), fetchOne
+  );
+
+  for (const sourceResult of fetchedSources) {
+    const { name, jobs, runId, fetchDuration, error } = sourceResult;
+    if (error) {
+      stats.errors.push({ source: name, error });
+      continue;
+    }
+    const sourceStats = { fetched: jobs.length, inserted: 0, updated: 0, matched: 0, skipped: 0 };
+    stats.fetched += jobs.length;
+
+    db.withTransaction(() => {
+      for (const job of jobs) {
+        const { inserted, updated, id } = db.upsertJob(job);
+        if (!inserted) {
+          stats.duplicates++;
+          if (updated) { stats.updated++; sourceStats.updated++; }
+        } else {
+          stats.new++;
+          sourceStats.inserted++;
+        }
+
+        const verdict = evaluate(job, criteria, profile);
+        db.setMatchResult(
+          id, verdict.score, verdict.reasons,
+          verdict.breakdown, verdict.missingSkills
+        );
+        if (inserted) {
+          if (verdict.matched) {
+            db.transition(id, 'matched', verdict.reasons.join(','));
+            stats.matched++; sourceStats.matched++;
+          } else {
+            db.transition(id, 'skipped', verdict.reasons.join(','));
+            stats.skipped++; sourceStats.skipped++;
+          }
+        }
+      }
+    });
+    db.finishSourceRun(runId, {
+      status: 'ok', ...sourceStats, duration_ms: fetchDuration
+    });
+  }
+
+  stats.stale = db.markStaleJobs(sourcesCfg.stale_after_days || 14);
+
+  const digestPath = path.join(__dirname, '..', 'data', 'digest.json');
+  fs.writeFileSync(digestPath, JSON.stringify({
+    generated_at: new Date().toISOString(),
+    jobs: db.digest(72, 20)
+  }, null, 2) + '\n');
 
   console.log('[pipeline] run complete:', JSON.stringify(stats));
   console.log('[pipeline] db totals:', JSON.stringify(db.countByStatus()));
