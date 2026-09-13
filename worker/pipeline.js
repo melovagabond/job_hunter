@@ -19,6 +19,11 @@ const SOURCES = {
   ashby: require('./sources/ashby'),
   smartrecruiters: require('./sources/smartrecruiters'),
   workable: require('./sources/workable'),
+  himalayas: require('./sources/himalayas'),
+  remote_landers: require('./sources/remote-land'),
+  we_work_remotely: require('./sources/we-work-remotely'),
+  startup_jobs: require('./sources/startup-jobs'),
+  job_opportunities: require('./sources/job-opportunities'),
   imports: require('./sources/imports')
 };
 

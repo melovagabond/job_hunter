@@ -4,7 +4,7 @@
   "adzuna": {
     "enabled": true,
     "country": "us",
-    "what": "devsecops OR \"cloud security\" OR \"security architect\"",
+    "what": "\"principal devops\" OR \"principal platform\" OR \"principal security\" OR \"cloud architect\"",
     "where": "Philadelphia, PA",
     "distance_km": 80,
     "max_pages": 5,
@@ -12,7 +12,7 @@
   },
   "usajobs": {
     "enabled": true,
-    "keyword": "DevSecOps Cloud Security",
+    "keyword": "Principal DevOps Platform Security Architect",
     "location_name": "Philadelphia, Pennsylvania",
     "radius_miles": 50,
     "include_remote": true,
@@ -21,7 +21,7 @@
   "remotive": {
     "enabled": true,
     "resume_queries": true,
-    "max_queries": 6,
+    "max_queries": 11,
     "searches": ["devsecops", "cloud security", "security architect", "cybersecurity"]
   },
   "remoteok": {
@@ -42,8 +42,40 @@
     "geo": "usa",
     "industry": "engineering",
     "resume_queries": true,
-    "max_queries": 6,
+    "max_queries": 11,
     "tags": ["devsecops", "cloud security", "security architect", "cybersecurity"]
+  },
+  "himalayas": {
+    "enabled": true,
+    "country": "US",
+    "sort": "recent",
+    "max_queries": 11,
+    "max_pages_per_query": 1
+  },
+  "remote_landers": {
+    "enabled": true,
+    "category": "Engineering",
+    "results_per_page": 100,
+    "max_pages": 3,
+    "us_eligible_only": true
+  },
+  "we_work_remotely": {
+    "enabled": true,
+    "feed": "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss",
+    "us_eligible_only": true
+  },
+  "startup_jobs": {
+    "enabled": true,
+    "feed": "https://startup.jobs/feeds/jobs?workplace=remote&role=engineering",
+    "us_eligible_only": true
+  },
+  "job_opportunities": {
+    "enabled": true,
+    "country": "US",
+    "remote": "remote",
+    "include_description": true,
+    "results_per_query": 50,
+    "max_queries": 11
   },
   "ashby": {
     "enabled": true,

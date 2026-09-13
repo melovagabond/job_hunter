@@ -93,7 +93,10 @@ function skillsInText(text) {
 }
 
 function searchTerms(profile, criteria, limit = 8) {
-  const primary = (criteria?.titles?.must_match_any || []).slice(0, 5);
+  const configured = criteria?.search?.terms || [];
+  const primary = configured.length
+    ? configured
+    : (criteria?.titles?.must_match_any || []).slice(0, 5);
   const usefulSkills = (profile?.keywords || []).filter(skill =>
     ['aws', 'azure', 'gcp', 'kubernetes', 'terraform', 'iam', 'devops', 'devsecops'].includes(skill)
   );

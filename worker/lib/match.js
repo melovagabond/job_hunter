@@ -74,10 +74,13 @@ function evaluate(job, criteria, profile = null) {
   reasons.push(...hits.map(h => `title_hit:${h}`));
 
   // 3. Salary floor. Compare against the max of the posted range so a
-  // 120k-160k posting survives a 140k floor.
+  // A range survives when its upper bound reaches the configured floor.
   const floor = criteria.salary.floor_usd;
   const best = job.salary_max ?? job.salary_min;
-  if (best != null) {
+  const currency = String(job.currency || 'USD').toUpperCase();
+  if (best != null && currency !== 'USD') {
+    reasons.push(`salary_non_usd_unconverted:${currency}`);
+  } else if (best != null) {
     if (best < floor) {
       return { matched: false, score, reasons: [...reasons, `salary_below_floor:${best}`] };
     }

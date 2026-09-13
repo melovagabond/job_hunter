@@ -7,8 +7,9 @@
 
 ## Current capabilities
 
-- Ten source adapters: Adzuna, USAJobs, Remotive, RemoteOK, Jobicy,
-  Greenhouse, Lever, Ashby, SmartRecruiters, and Workable.
+- Fifteen source adapters: Adzuna, USAJobs, Remotive, RemoteOK, Jobicy,
+  Himalayas, Remote Landers, We Work Remotely, Startup Jobs, Job
+  Opportunities, Greenhouse, Lever, Ashby, SmartRecruiters, and Workable.
 - Outbound searches plus manual/batch import for LinkedIn, Indeed, and Dice.
 - SQLite FTS5 search over titles, companies, locations, and descriptions.
 - Private local resume profile with explainable skill overlap, missing-skill,
@@ -69,8 +70,24 @@ Edit `.env` and replace placeholders with real values:
 Placeholder values are treated as unconfigured, so these sources skip cleanly
 until valid credentials are present.
 
-Remotive, RemoteOK, and Jobicy require no keys. Their queries are derived from
-the resume and title criteria where supported.
+The following sources are enabled by default and require no account, API key,
+or company list:
+
+| Source | Interface | Local behavior |
+| --- | --- | --- |
+| Remotive | Public JSON API | Runs the configured role-search terms. |
+| RemoteOK | Public JSON API | Pulls the configured technical tags. |
+| Jobicy | Public JSON API | Runs role terms and requests US engineering jobs. |
+| Himalayas | Public JSON API | Searches each role term with the US country filter. |
+| Remote Landers | Public JSON API | Reads recent ATS-direct engineering jobs and keeps US/worldwide roles. |
+| We Work Remotely | Public RSS | Reads the DevOps/System Administration feed and keeps US/worldwide roles. |
+| Startup Jobs | Public RSS | Reads its remote engineering feed and keeps US/worldwide roles. |
+| Job Opportunities | Keyless JSON API | Searches employer-direct US remote jobs, up to the public 50-row cap per term. |
+
+No setup is needed for these sources. Keep their canonical posting URLs intact:
+We Work Remotely and Startup Jobs require links/credit back to their listings.
+Queries are derived from `criteria.search.terms` and the local resume where the
+source supports search.
 
 ### 4. Configure target-company ATS boards
 
@@ -107,6 +124,8 @@ Edit `config/criteria.json`:
 - `titles.resume_assisted`: broader titles that require at least two resume
   skill signals.
 - `titles.exclude`: titles that are always rejected.
+- `search.terms`: focused outbound API queries; these do not replace the title
+  matching rules.
 - `salary.floor_usd` and `salary.accept_missing_salary`.
 - `location.home`, `radius_miles`, remote policy, and metro keywords.
 - `eligibility.allow_contract`.
@@ -116,6 +135,16 @@ Edit `config/criteria.json`:
 
 The eligibility defaults are permissive because citizenship, clearance, and
 sponsorship status cannot safely be inferred from a resume. Set them explicitly.
+
+The checked-in criteria target Principal DevOps, Principal Platform, related
+Principal infrastructure/security/cloud roles, and Architect roles with a
+`$175,000` USD floor. Generic Principal, Staff, Distinguished, and Architect
+titles are resume-assisted and need at least two resume skill signals. A posted
+USD range is accepted when its upper bound reaches the floor. Roles with no
+salary remain eligible because many feeds omit compensation; set
+`salary.accept_missing_salary` to `false` for strict enforcement. Non-USD
+figures are retained but treated as unconverted/unknown rather than compared
+incorrectly to the USD floor.
 
 ### 6. Import LinkedIn, Indeed, and Dice results
 

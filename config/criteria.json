@@ -1,21 +1,45 @@
 {
   "titles": {
     "must_match_any": [
+      "principal devops",
+      "principal platform",
+      "principal cloud",
+      "principal security",
+      "principal infrastructure",
+      "principal site reliability",
       "devsecops",
       "cloud security",
+      "devsecops architect",
+      "cloud security architect",
       "security architect",
       "cloud architect",
+      "platform architect",
+      "infrastructure architect",
+      "application security architect",
+      "cybersecurity architect",
+      "enterprise security architect",
+      "identity architect",
+      "iam architect",
       "application security",
       "platform security",
       "security engineer",
       "infrastructure security"
     ],
     "resume_assisted": [
+      "principal engineer",
+      "principal consultant",
+      "distinguished engineer",
+      "staff engineer",
+      "enterprise architect",
+      "solutions architect",
+      "technical architect",
+      "systems architect",
+      "lead architect",
+      "chief architect",
       "devops",
       "site reliability",
       "platform engineer",
       "cloud engineer",
-      "solutions architect",
       "cybersecurity",
       "information security",
       "identity and access",
@@ -39,8 +63,23 @@
       "security officer"
     ]
   },
+  "search": {
+    "terms": [
+      "principal devops",
+      "principal platform engineer",
+      "principal cloud architect",
+      "principal security architect",
+      "principal infrastructure engineer",
+      "principal site reliability engineer",
+      "devsecops architect",
+      "cloud security architect",
+      "platform architect",
+      "infrastructure architect",
+      "enterprise security architect"
+    ]
+  },
   "salary": {
-    "floor_usd": 140000,
+    "floor_usd": 175000,
     "accept_missing_salary": true
   },
   "location": {

@@ -14,7 +14,10 @@ const { haversineMiles } = require('../worker/lib/geo');
 const { isConfigured } = require('../worker/lib/env');
 const { extractProfile, scoreAgainstProfile } = require('../worker/lib/profile');
 const { annualSalary } = require('../worker/sources/jobicy');
-const { parseAnnualSalary } = require('../worker/lib/salary');
+const { parseAnnualSalary, parseCompensation } = require('../worker/lib/salary');
+const { decodeXml, parseRss } = require('../worker/lib/rss');
+const { isUsEligibleRemote } = require('../worker/lib/regions');
+const { splitTitle, locationFromDescription } = require('../worker/sources/startup-jobs');
 const { analyzeEligibility } = require('../worker/lib/match');
 
 const criteria = JSON.parse(fs.readFileSync(
@@ -94,7 +97,7 @@ test('exclusion vetoes even with an allowlist hit', () => {
 
 test('salary floor compares against range max', () => {
   const survives = evaluate(
-    makeJob({ salaryMin: 120000, salaryMax: 160000 }), criteria
+    makeJob({ salaryMin: 150000, salaryMax: 180000 }), criteria
   );
   assert.strictEqual(survives.matched, true);
 
@@ -247,6 +250,39 @@ test('salary text and eligibility signals are normalized', () => {
   assert.ok(result.blockers.includes('contract_not_accepted'));
   assert.ok(result.blockers.includes('clearance_required'));
   assert.ok(result.blockers.includes('sponsorship_unavailable'));
+});
+
+test('feed compensation handles annual and hourly ranges without reading arbitrary ranges', () => {
+  assert.deepStrictEqual(parseCompensation('$175k–$225k / yr'), {
+    salaryMin: 175000, salaryMax: 225000, currency: 'USD'
+  });
+  assert.deepStrictEqual(parseCompensation('€80–100 / hr'), {
+    salaryMin: 166400, salaryMax: 208000, currency: 'EUR'
+  });
+  assert.deepStrictEqual(parseCompensation('Interview process has 2-4 stages'), { currency: 'USD' });
+});
+
+test('non-USD salary is retained but not compared directly to the USD floor', () => {
+  const result = evaluate(makeJob({ currency: 'CAD', salaryMin: 180000, salaryMax: 200000 }), criteria);
+  assert.strictEqual(result.matched, true);
+  assert.ok(result.reasons.includes('salary_non_usd_unconverted:CAD'));
+});
+
+test('RSS parsing decodes fields and preserves repeated categories', () => {
+  const rows = parseRss('<rss><item><title>Acme: Principal Platform Engineer</title><link>https://example.test/1?a=1&amp;b=2</link><description>Cloud &amp;amp; security</description><category>DevOps</category><category>Security</category></item></rss>');
+  assert.strictEqual(rows[0].link, 'https://example.test/1?a=1&b=2');
+  assert.strictEqual(decodeXml('A &amp;amp; B'), 'A & B');
+  assert.deepStrictEqual(rows[0].categories, ['DevOps', 'Security']);
+});
+
+test('no-key feed helpers preserve US/worldwide roles and parse Startup Jobs titles', () => {
+  assert.strictEqual(isUsEligibleRemote('Anywhere in the World'), true);
+  assert.strictEqual(isUsEligibleRemote('Remote, U.S.'), true);
+  assert.strictEqual(isUsEligibleRemote('Remote, Canada'), false);
+  assert.deepStrictEqual(splitTitle('Principal Platform Engineer at Acme'), {
+    title: 'Principal Platform Engineer', company: 'Acme'
+  });
+  assert.strictEqual(locationFromDescription('Summary\n\nRemote, Philadelphia, Pennsylvania, U.S. · $175,000 – $210,000 per year'), 'Remote, Philadelphia, Pennsylvania, U.S.');
 });
 
 test('source run metrics preserve yield and timing', () => {
